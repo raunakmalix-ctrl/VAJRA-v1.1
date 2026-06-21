@@ -194,7 +194,7 @@ class TranscriptEngine(BaseEngine):
 
             if new_text and new_text != seg["text"]:
                 changed_count += 1
-                if progress:
+                if progress is not None:
                     progress(i / len(segments),
                              desc=f"Re-voicing segment {i+1}/{len(segments)}")
                 clip_wav = self.voice.run(
@@ -217,7 +217,7 @@ class TranscriptEngine(BaseEngine):
         new_audio = timestamp_file("edited_audio", "wav")
         result.export(new_audio, format="wav")
 
-        if progress:
+        if progress is not None:
             progress(0.7, desc="Re-syncing lips ...")
         out = self.lipsync.run(
             video_path=state["video"], audio_path=new_audio,

@@ -188,7 +188,7 @@ class FaceSwapEngine(BaseEngine):
                 out, _ = self._swap_frame(frame, src_face, analyser, swapper, enhance)
                 writer.write(out)
                 i += 1
-                if progress and total:
+                if progress is not None and total:
                     progress(i / total, desc=f"Swapping frame {i}/{total}")
         finally:
             cap.release()
