@@ -1,0 +1,14 @@
+# Generated / heavy artifacts — never commit these.
+outputs/
+uploads/
+models/
+venvs/
+third_party/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.claude/
+*.wav
+*.mp4
+*.png
+!assets/*.png

@@ -1,0 +1,13 @@
+# venv_latentsync — LatentSync (primary) + Wav2Lip (fallback), isolated.
+# Installed in addition to LatentSync's own requirements.txt (see make_venvs.sh).
+# Pin torch to match LatentSync's tested stack (CUDA 12.1 wheels).
+torch==2.2.2
+torchvision==0.17.2
+torchaudio==2.2.2
+numpy<2
+opencv-python==4.9.0.80
+librosa==0.10.1
+scipy
+ffmpeg-python
+einops
+omegaconf

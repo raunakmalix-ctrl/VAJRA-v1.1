@@ -1,0 +1,7 @@
+# Keep LF line endings in the repo so shell scripts run on Linux/Colab.
+* text=auto eol=lf
+*.sh  text eol=lf
+*.py  text eol=lf
+*.ipynb text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf

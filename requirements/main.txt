@@ -1,0 +1,33 @@
+# Main Colab env — Gradio + FLUX + face swap + WhisperX.
+# torch / torchvision / torchaudio are preinstalled by Colab; do NOT pin them
+# here or you risk breaking CUDA. Everything below layers on top.
+
+gradio>=4.44,<5
+
+# FLUX.1 (text -> image)
+diffusers>=0.31.0
+transformers>=4.44.0
+accelerate>=0.34.0
+safetensors
+sentencepiece
+protobuf
+
+# Face swap
+insightface==0.7.3
+onnxruntime-gpu
+opencv-python-headless
+gfpgan
+basicsr
+facexlib
+
+# Transcript (Feature 2, step 1)
+whisperx
+
+# Media utils
+pydub
+soundfile
+imageio-ffmpeg
+huggingface_hub
+
+# insightface / basicsr need numpy < 2
+numpy<2
