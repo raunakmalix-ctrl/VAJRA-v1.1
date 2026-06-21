@@ -1,0 +1,11 @@
+# venv_ltx — LTX-2 text/image -> video (Lightricks). Built from Python 3.12.
+# torch ~2.7 (cu126) is installed separately by setup/make_ltx_venv.sh.
+# LTX2Pipeline is recent, so pull diffusers from git main.
+diffusers @ git+https://github.com/huggingface/diffusers.git
+transformers
+accelerate
+safetensors
+sentencepiece
+imageio
+imageio-ffmpeg
+av

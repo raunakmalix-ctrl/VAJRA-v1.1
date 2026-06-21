@@ -62,6 +62,11 @@ def _venv_python(name):
 VENV_VOICE_PY      = _venv_python("venv_voice")
 VENV_SADTALKER_PY  = _venv_python("venv_sadtalker")
 VENV_LATENTSYNC_PY = _venv_python("venv_latentsync")
+VENV_LTX_PY        = _venv_python("venv_ltx")
+
+# LTX-2 (Lightricks) text/image -> video. Needs latest diffusers + torch ~2.7
+# + Python 3.12, so it lives in its own venv (built by setup/make_ltx_venv.sh).
+LTX_REPO = "Lightricks/LTX-2"
 
 # ── FFmpeg (Colab: apt-installed, on PATH) ──────────────────────────────────
 FFMPEG_PATH  = shutil.which("ffmpeg") or "ffmpeg"
