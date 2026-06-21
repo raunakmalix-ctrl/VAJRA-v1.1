@@ -28,18 +28,25 @@ from engines.lipsync_engine import LipSyncEngine
 _XTTS_LANGS = {"en", "hi"}
 
 _whisper_model = None
+_whisper_device = None
 
 
-def _load_whisper():
-    global _whisper_model
-    if _whisper_model is None:
-        from faster_whisper import WhisperModel
-        compute = "float16" if DEVICE == "cuda" else "int8"
-        print(f"[Transcript] Loading faster-whisper ({WHISPERX_MODEL}) ...")
-        _whisper_model = WhisperModel(
-            WHISPERX_MODEL, device=DEVICE, compute_type=compute
-        )
+def _load_whisper(device):
+    global _whisper_model, _whisper_device
+    if _whisper_model is not None and _whisper_device == device:
+        return _whisper_model
+    from faster_whisper import WhisperModel
+    compute = "float16" if device == "cuda" else "int8"
+    print(f"[Transcript] Loading faster-whisper ({WHISPERX_MODEL}) on {device} ...")
+    _whisper_model = WhisperModel(WHISPERX_MODEL, device=device, compute_type=compute)
+    _whisper_device = device
     return _whisper_model
+
+
+def _reset_whisper():
+    global _whisper_model, _whisper_device
+    _whisper_model = None
+    _whisper_device = None
 
 
 def _extract_audio(video_path):
@@ -109,14 +116,28 @@ class TranscriptEngine(BaseEngine):
     def extract_transcript(self, video_path):
         audio_path = _extract_audio(video_path)
 
-        model = _load_whisper()
-        seg_iter, info = model.transcribe(
-            audio_path, word_timestamps=True, vad_filter=True
-        )
-        lang = getattr(info, "language", "en") or "en"
+        # GPU first; fall back to CPU if ctranslate2's cuDNN isn't available
+        # (Colab ships cuDNN 9, faster-whisper's GPU backend wants cuDNN 8).
+        devices = ["cuda", "cpu"] if DEVICE == "cuda" else ["cpu"]
+        raw, lang, last_err = None, "en", None
+        for dev in devices:
+            try:
+                model = _load_whisper(dev)
+                seg_iter, info = model.transcribe(
+                    audio_path, word_timestamps=True, vad_filter=True
+                )
+                raw = list(seg_iter)   # materialize now to surface runtime errors
+                lang = getattr(info, "language", "en") or "en"
+                break
+            except Exception as e:
+                print(f"[Transcript] faster-whisper on {dev} failed: {e}")
+                _reset_whisper()
+                last_err = e
+        if raw is None:
+            raise RuntimeError(f"Transcription failed: {last_err}")
 
         segments = []
-        for s in seg_iter:
+        for s in raw:
             text = (s.text or "").strip()
             if text:
                 segments.append({
