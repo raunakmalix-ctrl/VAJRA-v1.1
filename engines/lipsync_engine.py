@@ -12,6 +12,7 @@ import subprocess
 
 from core.base_engine import BaseEngine
 from core.utils import timestamp_file, to_wav
+from core.subprocess_runner import clean_env
 from core.config import (
     VENV_LATENTSYNC_PY, LATENTSYNC_DIR, LATENTSYNC_CKPT, LATENTSYNC_CONFIG,
     WAV2LIP_DIR, WAV2LIP_CKPT, FFMPEG_PATH, FFPROBE_PATH,
@@ -63,7 +64,7 @@ class LipSyncEngine(BaseEngine):
         ]
         print("[LipSync] Running LatentSync ...")
         proc = subprocess.run(cmd, cwd=LATENTSYNC_DIR,
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=clean_env())
         if proc.returncode != 0 or not os.path.exists(out_path):
             raise RuntimeError(
                 f"LatentSync exit {proc.returncode}\n"
@@ -87,7 +88,7 @@ class LipSyncEngine(BaseEngine):
         ]
         print("[LipSync] Running Wav2Lip (fallback) ...")
         proc = subprocess.run(cmd, cwd=WAV2LIP_DIR,
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=clean_env())
         if proc.returncode != 0 or not os.path.exists(out_path):
             raise RuntimeError(
                 f"Wav2Lip exit {proc.returncode}\n"

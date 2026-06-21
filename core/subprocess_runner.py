@@ -21,6 +21,22 @@ import subprocess
 RESULT_PREFIX = "RESULT::"
 
 
+def clean_env(extra=None):
+    """
+    Env for subprocess engines running in isolated venvs:
+      - drop PYTHONPATH so the main env's site-packages don't leak in,
+      - force a headless matplotlib backend (Colab sets MPLBACKEND to an
+        inline backend that doesn't exist outside the notebook kernel, which
+        crashes `import matplotlib` in XTTS / SadTalker).
+    """
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["MPLBACKEND"] = "Agg"
+    if extra:
+        env.update(extra)
+    return env
+
+
 def run_worker(venv_python, worker_script, args: dict,
                cwd=None, extra_env=None, timeout=None):
     """
@@ -41,11 +57,7 @@ def run_worker(venv_python, worker_script, args: dict,
     json.dump(args, tmp)
     tmp.close()
 
-    env = os.environ.copy()
-    # Don't let the main env's site-packages leak into the venv subprocess.
-    env.pop("PYTHONPATH", None)
-    if extra_env:
-        env.update(extra_env)
+    env = clean_env(extra_env)
 
     try:
         proc = subprocess.run(

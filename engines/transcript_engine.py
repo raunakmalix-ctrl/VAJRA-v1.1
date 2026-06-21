@@ -151,13 +151,9 @@ class TranscriptEngine(BaseEngine):
         while new_lines and not new_lines[-1]:
             new_lines.pop()
 
-        if len(new_lines) != len(segments):
-            raise ValueError(
-                f"Edited transcript has {len(new_lines)} lines but the original "
-                f"has {len(segments)} segments. Keep one segment per line "
-                f"(edit words, don't add/remove line breaks)."
-            )
-
+        # Align one segment per line. If the user removed/added line breaks we
+        # don't crash: segments without a matching edited line keep their
+        # original audio. (For best results, edit words in place per line.)
         original = AudioSegment.from_file(state["audio"])
         result = AudioSegment.empty()
         cursor_ms = 0
@@ -169,13 +165,15 @@ class TranscriptEngine(BaseEngine):
             if start_ms > cursor_ms:
                 result += original[cursor_ms:start_ms]   # keep gaps/silence
 
-            if new_lines[i] != seg["text"]:
+            new_text = new_lines[i] if i < len(new_lines) else seg["text"]
+
+            if new_text and new_text != seg["text"]:
                 changed_count += 1
                 if progress:
                     progress(i / len(segments),
                              desc=f"Re-voicing segment {i+1}/{len(segments)}")
                 clip_wav = self.voice.run(
-                    text=new_lines[i],
+                    text=new_text,
                     reference_audio_path=state["audio"],
                     language=state["language"],
                 )

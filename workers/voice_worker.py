@@ -7,6 +7,8 @@ Invoked by core.subprocess_runner.run_worker — do not import the main env here
 import os
 import sys
 
+os.environ["MPLBACKEND"] = "Agg"   # XTTS imports matplotlib; avoid inline backend
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.subprocess_runner import read_args, emit_result   # noqa: E402
 

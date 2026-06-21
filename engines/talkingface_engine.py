@@ -10,6 +10,7 @@ import subprocess
 
 from core.base_engine import BaseEngine
 from core.utils import timestamp_file, to_wav
+from core.subprocess_runner import clean_env
 from core.config import (
     VENV_SADTALKER_PY, SADTALKER_DIR, SADTALKER_CKPT_DIR, OUTPUTS_DIR,
 )
@@ -57,7 +58,8 @@ class TalkingFaceEngine(BaseEngine):
             print(f"[TalkingFace] Running SadTalker (size={size}, "
                   f"enhance={enhance_face}, still={still_mode}) ...")
             proc = subprocess.run(
-                cmd, cwd=SADTALKER_DIR, capture_output=True, text=True
+                cmd, cwd=SADTALKER_DIR, capture_output=True, text=True,
+                env=clean_env(),
             )
             if proc.returncode != 0:
                 raise RuntimeError(
