@@ -32,26 +32,29 @@ make_venv() {  # make_venv <name>
   "$VENVS/$name/bin/pip" install -q --upgrade pip wheel
 }
 
+# torch trio is installed LAST in each venv so it overrides whatever a package's
+# own requirements pulled in — keeping torch/torchvision/torchaudio consistent.
 echo "==> venv_voice (XTTS-v2)"
 make_venv venv_voice
+"$VENVS/venv_voice/bin/pip" install -q -r "$ROOT/requirements/voice.txt"
 "$VENVS/venv_voice/bin/pip" install -q \
   torch==2.1.2 torchaudio==2.1.2 --index-url "$CU"
-"$VENVS/venv_voice/bin/pip" install -q -r "$ROOT/requirements/voice.txt"
 
 echo "==> venv_sadtalker (SadTalker)"
 make_venv venv_sadtalker
-"$VENVS/venv_sadtalker/bin/pip" install -q \
-  torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url "$CU"
 "$VENVS/venv_sadtalker/bin/pip" install -q -r "$ROOT/requirements/sadtalker.txt" || true
 [ -f "$TP/SadTalker/requirements.txt" ] && \
   "$VENVS/venv_sadtalker/bin/pip" install -q -r "$TP/SadTalker/requirements.txt" || true
+"$VENVS/venv_sadtalker/bin/pip" install -q \
+  torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url "$CU"
 
 echo "==> venv_latentsync (LatentSync + Wav2Lip)"
 make_venv venv_latentsync
-"$VENVS/venv_latentsync/bin/pip" install -q \
-  torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url "$CU"
 "$VENVS/venv_latentsync/bin/pip" install -q -r "$ROOT/requirements/latentsync.txt" || true
 [ -f "$TP/LatentSync/requirements.txt" ] && \
   "$VENVS/venv_latentsync/bin/pip" install -q -r "$TP/LatentSync/requirements.txt" || true
+# Match LatentSync 1.5's torch (its requirements pull 2.5.1); align the trio.
+"$VENVS/venv_latentsync/bin/pip" install -q \
+  torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url "$CU"
 
 echo "==> venvs ready."

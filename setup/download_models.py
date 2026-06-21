@@ -9,8 +9,12 @@ Notes:
   - InsightFace 'buffalo_l' detector downloads itself on first face-swap run.
 """
 import os
+import sys
 import subprocess
 import urllib.request
+
+# Allow running as `python setup/download_models.py` from the project root.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import (
     MODEL_ROOT, XTTS_DIR, INSIGHTFACE_ROOT, INSWAPPER_PATH, GFPGAN_PATH,
