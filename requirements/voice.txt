@@ -5,3 +5,6 @@
 coqui-tts==0.24.1
 soundfile
 numpy<2
+# spacy (pulled by coqui-tts) imports these but they don't always resolve.
+click
+typer
