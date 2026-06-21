@@ -46,11 +46,8 @@ for mod in ("basicsr",):
                 print("  patched", p)
 PY
 
-# Wav2Lip's audio.py uses the old positional librosa.filters.mel() signature,
-# which librosa 0.10 made keyword-only.
-if [ -f "$THIRD_PARTY/Wav2Lip/audio.py" ]; then
-  sed -i 's/librosa\.filters\.mel(hp\.sample_rate, hp\.n_fft/librosa.filters.mel(sr=hp.sample_rate, n_fft=hp.n_fft/' \
-    "$THIRD_PARTY/Wav2Lip/audio.py"
-fi
+# Patch the cloned third-party repos (Wav2Lip librosa API, LatentSync
+# missing-face tolerance).
+bash "$ROOT/setup/patch_thirdparty.sh"
 
 echo "==> main env ready."
