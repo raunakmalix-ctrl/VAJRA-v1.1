@@ -37,8 +37,13 @@ make_venv() {  # make_venv <name>
 echo "==> venv_voice (XTTS-v2)"
 make_venv venv_voice
 "$VENVS/venv_voice/bin/pip" install -q -r "$ROOT/requirements/voice.txt"
+# coqui-tts >=0.25 uses a forked coqpit ("coqpit-config"); remove the original
+# coqpit if an earlier build left it behind, or the import conflicts.
+"$VENVS/venv_voice/bin/pip" uninstall -y -q coqpit 2>/dev/null || true
+"$VENVS/venv_voice/bin/pip" install -q coqpit-config
+# transformers (pulled by coqui-tts >=0.25) needs torch >= 2.4.
 "$VENVS/venv_voice/bin/pip" install -q \
-  torch==2.1.2 torchaudio==2.1.2 --index-url "$CU"
+  torch==2.5.1 torchaudio==2.5.1 --index-url "$CU"
 
 echo "==> venv_sadtalker (SadTalker)"
 make_venv venv_sadtalker

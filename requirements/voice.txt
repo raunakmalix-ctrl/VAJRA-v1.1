@@ -7,6 +7,7 @@
 # ("issubclass() arg 1 must be a class" in coqpit); the newer fork ships the
 # fixed config library.
 coqui-tts>=0.25.0
+coqpit-config
 soundfile
 numpy<2
 # spacy (pulled by coqui-tts) imports these but they don't always resolve.

@@ -67,7 +67,13 @@ def vram_html():
 
 
 def ok(msg):  return f"<span class='status-ok'>✔ {msg}</span>"
-def err(msg): return f"<span class='status-err'>✖ {msg}</span>"
+
+def err(msg):
+    # Print the full traceback to the Colab cell when called inside an except.
+    import sys, traceback
+    if sys.exc_info()[0] is not None:
+        traceback.print_exc()
+    return f"<span class='status-err'>✖ {msg}</span>"
 def warn(msg): return f"<span class='status-warn'>⚠ {msg}</span>"
 
 
