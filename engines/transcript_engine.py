@@ -205,7 +205,15 @@ class TranscriptEngine(BaseEngine):
                     reference_audio_path=state["audio"],
                     language=state["language"],
                 )
+                orig_seg = original[start_ms:end_ms]
                 seg_audio = _fit_duration(clip_wav, (end_ms - start_ms) / 1000.0)
+                # Match the re-voiced clip's loudness to the original segment so
+                # edited words don't jump in volume (XTTS outputs louder).
+                if orig_seg.dBFS != float("-inf") and seg_audio.dBFS != float("-inf"):
+                    seg_audio = seg_audio.apply_gain(orig_seg.dBFS - seg_audio.dBFS)
+                # Tiny edge fades avoid clicks at the splice without changing
+                # length (keeps audio aligned with the video frames).
+                seg_audio = seg_audio.fade_in(8).fade_out(8)
             else:
                 seg_audio = original[start_ms:end_ms]
 

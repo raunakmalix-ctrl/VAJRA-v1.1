@@ -80,7 +80,7 @@ def warn(msg): return f"<span class='status-warn'>⚠ {msg}</span>"
 
 # ── Feature 1: Talking video ────────────────────────────────────────────────
 def run_talking_video(image, ref_audio, text, language, size, enhance, still,
-                      progress=gr.Progress()):
+                      preprocess, progress=gr.Progress()):
     if image is None:
         return None, warn("Upload a portrait image")
     if ref_audio is None:
@@ -95,7 +95,7 @@ def run_talking_video(image, ref_audio, text, language, size, enhance, still,
         progress(0.55, desc="Animating portrait (SadTalker) ...")
         out = talkingface.run(portrait_path=image, audio_path=wav,
                               size=int(size), enhance_face=enhance,
-                              still_mode=still)
+                              still_mode=still, preprocess=preprocess)
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
@@ -234,6 +234,8 @@ with gr.Blocks(css=CSS, title="Image-Talk", analytics_enabled=False) as demo:
                                            label="Resolution")
                         tv_enh  = gr.Checkbox(label="GFPGAN enhance", value=True)
                         tv_still = gr.Checkbox(label="Still mode", value=False)
+                    tv_pre = gr.Radio(["full", "crop", "resize"], value="full",
+                        label="Framing  (full = whole image · crop = face only)")
                     tv_btn = gr.Button("▶  Generate Talking Video", variant="primary")
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Output</div>")
@@ -241,7 +243,8 @@ with gr.Blocks(css=CSS, title="Image-Talk", analytics_enabled=False) as demo:
                     tv_status = gr.HTML(ok("Ready"))
             tv_audio.change(audio_info, [tv_audio], [tv_ainfo])
             tv_btn.click(run_talking_video,
-                         [tv_img, tv_audio, tv_text, tv_lang, tv_size, tv_enh, tv_still],
+                         [tv_img, tv_audio, tv_text, tv_lang, tv_size, tv_enh,
+                          tv_still, tv_pre],
                          [tv_out, tv_status])
 
         # ── 02 Edit & Relip ─────────────────────────────────────────────────

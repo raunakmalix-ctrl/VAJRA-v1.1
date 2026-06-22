@@ -20,7 +20,7 @@ class TalkingFaceEngine(BaseEngine):
 
     def run(self, portrait_path, audio_path,
             size=512, enhance_face=True, still_mode=False,
-            expression_scale=1.0):
+            expression_scale=1.0, preprocess="full"):
         if not os.path.exists(portrait_path):
             raise FileNotFoundError(f"Portrait not found: {portrait_path}")
         if not os.path.exists(audio_path):
@@ -49,6 +49,7 @@ class TalkingFaceEngine(BaseEngine):
                 "--result_dir",     result_dir,
                 "--size",           str(size),
                 "--expression_scale", str(expression_scale),
+                "--preprocess",     preprocess,
             ]
             if enhance_face:
                 cmd += ["--enhancer", "gfpgan"]
@@ -56,7 +57,8 @@ class TalkingFaceEngine(BaseEngine):
                 cmd += ["--still"]
 
             print(f"[TalkingFace] Running SadTalker (size={size}, "
-                  f"enhance={enhance_face}, still={still_mode}) ...")
+                  f"enhance={enhance_face}, still={still_mode}, "
+                  f"preprocess={preprocess}) ...")
             proc = subprocess.run(
                 cmd, cwd=SADTALKER_DIR, capture_output=True, text=True,
                 env=clean_env(),
