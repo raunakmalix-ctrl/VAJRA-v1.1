@@ -9,6 +9,7 @@ Realistic face swap (source -> target) for both images and video.
 Runs in the main Colab env (onnxruntime-gpu + GFPGAN).
 """
 import os
+import sys
 import subprocess
 import tempfile
 
@@ -18,9 +19,10 @@ import numpy as np
 from core.base_engine import BaseEngine
 from core.model_manager import load_model
 from core.utils import timestamp_file, transcode_h264
+from core.subprocess_runner import clean_env
 from core.device import empty_cache
 from core.config import (
-    INSWAPPER_PATH, INSIGHTFACE_ROOT, GFPGAN_PATH, FFMPEG_PATH,
+    INSWAPPER_PATH, INSIGHTFACE_ROOT, GFPGAN_PATH, FFMPEG_PATH, CODEFORMER_DIR,
 )
 
 MAX_DET_SIZE = 1920   # cap detection resolution; composite stays full-res
@@ -127,8 +129,28 @@ class FaceSwapEngine(BaseEngine):
                 print(f"[FaceSwap] Enhance skipped on frame: {e}")
         return result, True
 
+    # ── CodeFormer restore (non-commercial S-Lab license) ────────────────────
+    def _codeformer(self, image_path):
+        if not os.path.exists(os.path.join(CODEFORMER_DIR, "inference_codeformer.py")):
+            print("[FaceSwap] CodeFormer repo missing — keeping GFPGAN/no enhance.")
+            return image_path
+        outdir = os.path.join(os.path.dirname(image_path), "codeformer_tmp")
+        os.makedirs(outdir, exist_ok=True)
+        cmd = [sys.executable, "inference_codeformer.py",
+               "-w", "0.7", "--bg_upsampler", "None",
+               "--input_path", image_path, "--output_path", outdir]
+        proc = subprocess.run(cmd, cwd=CODEFORMER_DIR, capture_output=True, text=True,
+                              env=clean_env({"PYTHONPATH": CODEFORMER_DIR}))
+        res = os.path.join(outdir, "final_results", os.path.basename(image_path))
+        if proc.returncode != 0 or not os.path.exists(res):
+            print(f"[FaceSwap] CodeFormer failed; keeping original.\n{proc.stderr[-600:]}")
+            return image_path
+        final = timestamp_file("faceswap_cf", "png")
+        os.replace(res, final)
+        return final
+
     # ── image -> image ──────────────────────────────────────────────────────
-    def run_image(self, source_path, target_path, enhance=True):
+    def run_image(self, source_path, target_path, enhancer="gfpgan"):
         analyser = load_face_analyser()
         swapper  = load_swapper()
 
@@ -144,17 +166,20 @@ class FaceSwapEngine(BaseEngine):
             raise ValueError("No face detected in source image.")
         src_face = _largest_face(src_faces)
 
-        result, ok = self._swap_frame(tgt_bgr, src_face, analyser, swapper, enhance)
+        result, ok = self._swap_frame(tgt_bgr, src_face, analyser, swapper,
+                                      enhance=(enhancer == "gfpgan"))
         if not ok:
             raise ValueError("No face detected in target image.")
 
         out_path = timestamp_file("faceswap", "png")
         cv2.imwrite(out_path, result)
+        if enhancer == "codeformer":
+            out_path = self._codeformer(out_path)
         print(f"[FaceSwap] Saved: {out_path}")
         return out_path
 
     # ── image -> video ────────────────────────────────────────────────────────
-    def run_video(self, source_path, target_video, enhance=True, progress=None):
+    def run_video(self, source_path, target_video, enhancer="gfpgan", progress=None):
         analyser = load_face_analyser()
         swapper  = load_swapper()
 
@@ -188,7 +213,10 @@ class FaceSwapEngine(BaseEngine):
                 ret, frame = cap.read()
                 if not ret:
                     break
-                out, _ = self._swap_frame(frame, src_face, analyser, swapper, enhance)
+                # Per-frame CodeFormer (subprocess) is impractical for video, so
+                # video uses GFPGAN whenever any enhancer is requested.
+                out, _ = self._swap_frame(frame, src_face, analyser, swapper,
+                                          enhance=(enhancer != "none"))
                 writer.write(out)
                 i += 1
                 if progress is not None and total:
@@ -223,7 +251,8 @@ class FaceSwapEngine(BaseEngine):
         return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 10000
 
     # ── dispatch ────────────────────────────────────────────────────────────
-    def run(self, source_path, target_path, enhance=True, is_video=False, progress=None):
+    def run(self, source_path, target_path, enhancer="gfpgan", is_video=False,
+            progress=None):
         if is_video:
-            return self.run_video(source_path, target_path, enhance, progress)
-        return self.run_image(source_path, target_path, enhance)
+            return self.run_video(source_path, target_path, enhancer, progress)
+        return self.run_image(source_path, target_path, enhancer)

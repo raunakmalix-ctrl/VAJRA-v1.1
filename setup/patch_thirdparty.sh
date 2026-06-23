@@ -41,4 +41,14 @@ else:
 PY
 fi
 
+# 3. CodeFormer vendors its own basicsr, which also imports the removed
+#    torchvision.transforms.functional_tensor — patch it too.
+CF="$TP/CodeFormer/basicsr"
+if [ -d "$CF" ]; then
+  grep -rl "functional_tensor" "$CF" 2>/dev/null | while read -r f; do
+    sed -i 's/torchvision\.transforms\.functional_tensor/torchvision.transforms.functional/' "$f"
+  done
+  echo "patched CodeFormer basicsr"
+fi
+
 echo "third-party patches applied."

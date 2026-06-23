@@ -18,6 +18,7 @@ clone https://github.com/OpenTalker/SadTalker.git      "$THIRD_PARTY/SadTalker"
 clone https://github.com/Rudrabha/Wav2Lip.git          "$THIRD_PARTY/Wav2Lip"
 clone https://github.com/bytedance/LatentSync.git       "$THIRD_PARTY/LatentSync"
 clone https://github.com/TMElyralab/MuseTalk.git        "$THIRD_PARTY/MuseTalk"
+clone https://github.com/sczhou/CodeFormer.git          "$THIRD_PARTY/CodeFormer"
 
 echo "==> pip: main requirements"
 pip install -q -r "$ROOT/requirements/main.txt"

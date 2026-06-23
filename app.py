@@ -146,15 +146,16 @@ def do_relip(state, edited_text, method, steps, guidance,
 
 
 # ── Feature 3: Text → image ─────────────────────────────────────────────────
-def run_txt2img(prompt, variant, width, height, steps, guidance, seed):
+def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed):
     if not prompt or not prompt.strip():
         return None, warn("Prompt required")
     try:
         free_inprocess()
-        v = {"SDXL (open)": "sdxl",
+        v = {"SDXL Realistic (best, open)": "sdxl_real",
+             "SDXL base (open)": "sdxl",
              "FLUX Schnell (token)": "schnell",
-             "FLUX Dev (token)": "dev"}.get(variant, "sdxl")
-        out = diffusion.run(prompt=prompt, variant=v,
+             "FLUX Dev (token)": "dev"}.get(variant, "sdxl_real")
+        out = diffusion.run(prompt=prompt, variant=v, negative_prompt=negative,
                             width=int(width), height=int(height),
                             steps=int(steps), guidance=float(guidance),
                             seed=int(seed))
@@ -164,7 +165,7 @@ def run_txt2img(prompt, variant, width, height, steps, guidance, seed):
 
 
 # ── Feature 4: Face swap ────────────────────────────────────────────────────
-def run_faceswap(source, mode, target_img, target_vid, enhance,
+def run_faceswap(source, mode, target_img, target_vid, enhancer,
                  progress=gr.Progress()):
     if source is None:
         return None, None, warn("Upload a source face")
@@ -175,8 +176,11 @@ def run_faceswap(source, mode, target_img, target_vid, enhance,
     try:
         free_inprocess()
         faceswap.load()
+        e = {"GFPGAN (default)": "gfpgan",
+             "CodeFormer (non-commercial)": "codeformer",
+             "None": "none"}.get(enhancer, "gfpgan")
         out = faceswap.run(source_path=source, target_path=target,
-                           enhance=enhance, is_video=is_video,
+                           enhancer=e, is_video=is_video,
                            progress=progress if is_video else None)
         if is_video:
             return None, out, ok(os.path.basename(out))
@@ -345,14 +349,18 @@ with gr.Blocks(css=CSS, title="Image-Talk", analytics_enabled=False) as demo:
                     ti_prompt = gr.Textbox(label="Prompt", lines=4,
                         placeholder="A cinematic portrait, golden hour, ultra-detailed…")
                     ti_variant = gr.Radio(
-                        ["SDXL (open)", "FLUX Schnell (token)", "FLUX Dev (token)"],
-                        value="SDXL (open)", label="Model  (FLUX needs HF_TOKEN + license)")
+                        ["SDXL Realistic (best, open)", "SDXL base (open)",
+                         "FLUX Schnell (token)", "FLUX Dev (token)"],
+                        value="SDXL Realistic (best, open)",
+                        label="Model  (FLUX needs HF_TOKEN + license)")
+                    ti_neg = gr.Textbox(label="Negative prompt (SDXL only)", lines=2,
+                        placeholder="leave blank for the built-in quality default")
                     with gr.Row():
                         ti_w = gr.Slider(512, 1536, value=1024, step=64, label="Width")
                         ti_h = gr.Slider(512, 1536, value=1024, step=64, label="Height")
                     with gr.Row():
-                        ti_steps = gr.Slider(4, 50, value=28, step=1, label="Steps")
-                        ti_guid  = gr.Slider(0.0, 7.0, value=3.5, step=0.5, label="Guidance")
+                        ti_steps = gr.Slider(4, 50, value=30, step=1, label="Steps")
+                        ti_guid  = gr.Slider(0.0, 9.0, value=6.0, step=0.5, label="Guidance")
                     ti_seed = gr.Number(label="Seed (−1 = random)", value=-1, precision=0)
                     ti_btn  = gr.Button("▶  Generate", variant="primary")
                 with gr.Column(scale=1):
@@ -360,7 +368,8 @@ with gr.Blocks(css=CSS, title="Image-Talk", analytics_enabled=False) as demo:
                     ti_out = gr.Image(label="", elem_classes=["output-media"])
                     ti_status = gr.HTML(ok("Ready"))
             ti_btn.click(run_txt2img,
-                         [ti_prompt, ti_variant, ti_w, ti_h, ti_steps, ti_guid, ti_seed],
+                         [ti_prompt, ti_variant, ti_neg, ti_w, ti_h,
+                          ti_steps, ti_guid, ti_seed],
                          [ti_out, ti_status])
 
         # ── 04 Face Swap ────────────────────────────────────────────────────
@@ -377,7 +386,11 @@ with gr.Blocks(css=CSS, title="Image-Talk", analytics_enabled=False) as demo:
                                        elem_classes=["output-media"])
                     fs_tvid = gr.Video(label="Target video (paste INTO every frame)",
                                        visible=False, elem_classes=["output-media"])
-                    fs_enh  = gr.Checkbox(label="GFPGAN enhance", value=True)
+                    fs_enh  = gr.Radio(
+                        ["GFPGAN (default)", "CodeFormer (non-commercial)", "None"],
+                        value="GFPGAN (default)",
+                        label="Face enhancer  (CodeFormer = sharper, image-only, "
+                              "S-Lab non-commercial license)")
                     fs_btn  = gr.Button("▶  Swap Face", variant="primary")
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Output</div>")
