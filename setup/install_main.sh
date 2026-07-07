@@ -54,10 +54,12 @@ PY
 bash "$ROOT/setup/patch_thirdparty.sh"
 
 # rembg pulls CPU onnxruntime, which shadows onnxruntime-gpu and forces
-# face swap / InsightFace onto CPU. Re-pin GPU as the only onnxruntime.
-echo "==> ensuring onnxruntime-gpu (GPU provider for face swap/InstantID)"
+# face swap / InsightFace onto CPU. Re-pin the SAME CUDA-12-compatible GPU
+# version as requirements/main.txt (unpinned "latest" wants CUDA 13, which
+# Colab doesn't have — "libcudart.so.13: cannot open shared object file").
+echo "==> ensuring onnxruntime-gpu==1.19.2 (GPU provider for face swap/InstantID)"
 pip uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
-pip install -q onnxruntime-gpu
+pip install -q onnxruntime-gpu==1.19.2
 
 # rembg -> pymatting -> cupy; Colab's cupy 14 is built for numpy 2 and crashes
 # against our numpy<2. Pin a numpy-1.x-compatible cupy.

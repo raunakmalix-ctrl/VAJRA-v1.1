@@ -314,10 +314,18 @@ def _media(fn, *a):
     except Exception as e:
         return None, err(str(e))
 
-def m_trim_video(v, s, e): return _media(media.trim_video, v, s, e)
-def m_trim_audio(a, s, e): return _media(media.trim_audio, a, s, e)
+def _media_dl(fn, *a):
+    """Like _media, but also returns a value for a companion DownloadButton."""
+    try:
+        out = fn(*a)
+        return out, ok("Done"), gr.DownloadButton(value=out, visible=True)
+    except Exception as e:
+        return None, err(str(e)), gr.DownloadButton(visible=False)
+
+def m_trim_video(v, s, e): return _media_dl(media.trim_video, v, s, e)
+def m_trim_audio(a, s, e): return _media_dl(media.trim_audio, a, s, e)
 def m_grab(v, t):          return _media(media.grab_frame, v, t)
-def m_clean(a):            return _media(media.clean_audio, a)
+def m_clean(a):            return _media_dl(media.clean_audio, a)
 def m_convert(f, t):       return _media(media.convert, f, t)
 def m_resize(v, w, h):     return _media(media.resize_video, v, w, h)
 def m_gif(v, fps, w):      return _media(media.to_gif, v, fps, w)
@@ -549,9 +557,10 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                         ms_tv_out = gr.Video(label="Trimmed", elem_classes=["output-media"])
                         ms_tv_st = gr.HTML("")
                         with gr.Row():
+                            ms_tv_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
                             ms_tv_send_relip = gr.Button("→ Edit & Relip", size="sm")
                 ms_tv_btn.click(m_trim_video, [ms_tv_in, ms_tv_s, ms_tv_e],
-                                [ms_tv_out, ms_tv_st])
+                                [ms_tv_out, ms_tv_st, ms_tv_dl])
 
             with gr.Accordion("✂  Trim audio", open=False):
                 with gr.Row():
@@ -564,9 +573,11 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     with gr.Column():
                         ms_ta_out = gr.Audio(label="Trimmed", type="filepath")
                         ms_ta_st = gr.HTML("")
-                        ms_ta_send_voice = gr.Button("→ Talking Video voice", size="sm")
+                        with gr.Row():
+                            ms_ta_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
+                            ms_ta_send_voice = gr.Button("→ Talking Video voice", size="sm")
                 ms_ta_btn.click(m_trim_audio, [ms_ta_in, ms_ta_s, ms_ta_e],
-                                [ms_ta_out, ms_ta_st])
+                                [ms_ta_out, ms_ta_st, ms_ta_dl])
 
             with gr.Accordion("🎞  Grab frame → portrait", open=False):
                 with gr.Row():
@@ -591,8 +602,10 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     with gr.Column():
                         ms_ca_out = gr.Audio(label="Cleaned", type="filepath")
                         ms_ca_st = gr.HTML("")
-                        ms_ca_send_voice = gr.Button("→ Talking Video voice", size="sm")
-                ms_ca_btn.click(m_clean, [ms_ca_in], [ms_ca_out, ms_ca_st])
+                        with gr.Row():
+                            ms_ca_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
+                            ms_ca_send_voice = gr.Button("→ Talking Video voice", size="sm")
+                ms_ca_btn.click(m_clean, [ms_ca_in], [ms_ca_out, ms_ca_st, ms_ca_dl])
 
             with gr.Accordion("🪄  Remove background (portrait)", open=False):
                 with gr.Row():

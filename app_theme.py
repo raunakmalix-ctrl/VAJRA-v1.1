@@ -217,6 +217,35 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
   letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
   display:flex; align-items:center; gap:8px;}
 .empty-hint i{font-size:1rem; color:var(--amber);}
+
+/* ── Readability fixes ─────────────────────────────────────────────────── */
+/* Gradio's own component chrome (upload dropzones, file rows, empty-state
+   hints, hint text) defaults to a low-contrast grey that's unreadable on our
+   white cards. Force the ink color and cancel any opacity-based dimming. */
+.gradio-container p, .gradio-container span, .gradio-container div,
+.gradio-container li, .gradio-container td, .gradio-container small{
+  color:var(--ink);
+}
+.gradio-container [class*="wrap"], .gradio-container [class*="empty"],
+.gradio-container [class*="upload" i], .gradio-container [class*="file"],
+.gradio-container [class*="icon-button"]{
+  color:var(--ink)!important; opacity:1!important;
+}
+.gradio-container [class*="wrap"] svg, .gradio-container [class*="empty"] svg,
+.gradio-container [class*="upload" i] svg{
+  color:var(--muted)!important; opacity:1!important;
+}
+
+/* Any component with a dark/near-black surface (audio & video player control
+   bars, code/JSON viewers) — golden-amber text/icons, consistent everywhere. */
+.gradio-container [class*="controls" i], .gradio-container [class*="player" i],
+.gradio-container [class*="waveform" i]{
+  color:var(--amber)!important;
+}
+.gradio-container [class*="controls" i] svg, .gradio-container [class*="player" i] svg,
+.gradio-container [class*="waveform" i] svg{
+  fill:var(--amber)!important; color:var(--amber)!important;
+}
 """
 
 THEME_JS = """
@@ -269,7 +298,7 @@ MASTHEAD = """
       <div class="vj-chip">Talking Face</div>
       <div class="vj-chip">Avatar Studio</div>
       <div class="vj-toggle-wrap">
-        <button class="vj-toggle" id="vajra-theme-btn" onclick="vajraToggle()">◐ Dark Mode</button>
+        <button class="vj-toggle" id="vajra-theme-btn" onclick="(function(b){var r=document.documentElement;if(r.getAttribute('data-theme')==='dark'){r.removeAttribute('data-theme');b.textContent='◐ Dark Mode';}else{r.setAttribute('data-theme','dark');b.textContent='☀ Light Mode';}})(this)">◐ Dark Mode</button>
       </div>
     </div>
   </div>

@@ -43,8 +43,12 @@ echo "==> mmlab (openmim)"
 "$V/bin/mim" install -q "mmdet==3.1.0"
 "$V/bin/mim" install -q "mmpose==1.1.0"
 
-echo "==> downloading MuseTalk weights"
-if [ -f "$TP/MuseTalk/download_weights.sh" ]; then
+echo "==> downloading MuseTalk weights (HF Hub — more reliable than the repo's"
+echo "    own script, which hosts some files on Google Drive)"
+"$V/bin/python" "$ROOT/setup/download_musetalk_weights.py" || \
+  echo "  !! HF download failed — falling back to the repo's own script"
+if [ ! -f "$TP/MuseTalk/models/musetalkV15/unet.pth" ] && \
+   [ -f "$TP/MuseTalk/download_weights.sh" ]; then
   ( cd "$TP/MuseTalk" && PATH="$V/bin:$PATH" bash download_weights.sh ) || \
     echo "  !! weight download failed — re-run this cell or download manually"
 fi

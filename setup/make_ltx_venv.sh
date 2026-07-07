@@ -19,11 +19,16 @@ if [ ! -x "$VENVS/venv_ltx/bin/python" ]; then
   "$VENVS/venv_ltx/bin/pip" install -q --upgrade pip wheel
 fi
 
-echo "==> torch 2.7 (cu126)"
-"$VENVS/venv_ltx/bin/pip" install -q \
-  torch==2.7.1 torchvision torchaudio --index-url "$CU"
-
+# Install diffusers/transformers FIRST — some of their deps pull an unpinned
+# torchaudio that doesn't match a torch installed earlier, causing
+# "undefined symbol: torch_library_impl" at import time (torch/torchaudio ABI
+# mismatch). Installing the matched torch/torchvision/torchaudio trio LAST
+# (same fix used for venv_latentsync) guarantees they end up consistent.
 echo "==> diffusers (git) + deps"
 "$VENVS/venv_ltx/bin/pip" install -q -r "$ROOT/requirements/ltx.txt"
+
+echo "==> torch 2.7 (cu126) — installed last to pin a matched trio"
+"$VENVS/venv_ltx/bin/pip" install -q \
+  torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url "$CU"
 
 echo "==> venv_ltx ready."

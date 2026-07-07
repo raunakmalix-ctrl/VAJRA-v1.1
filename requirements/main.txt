@@ -23,7 +23,11 @@ protobuf
 
 # Face swap
 insightface==0.7.3
-onnxruntime-gpu
+# Pinned: newer onnxruntime-gpu releases require CUDA 13 (libcudart.so.13),
+# which Colab's runtime doesn't ship — causes "libcudart.so.13: cannot open
+# shared object file" on import (breaks face swap AND SDXL/FLUX loading via
+# diffusers' onnx_utils probe). 1.19.2 targets CUDA 12, matching Colab.
+onnxruntime-gpu==1.19.2
 opencv-python-headless
 gfpgan
 basicsr
