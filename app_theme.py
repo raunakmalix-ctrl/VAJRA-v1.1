@@ -219,32 +219,15 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
 .empty-hint i{font-size:1rem; color:var(--amber);}
 
 /* ── Readability fixes ─────────────────────────────────────────────────── */
-/* Gradio's own component chrome (upload dropzones, file rows, empty-state
-   hints, hint text) defaults to a low-contrast grey that's unreadable on our
-   white cards. Force the ink color and cancel any opacity-based dimming. */
+/* Gradio's own component chrome (upload dropzones, hint text) defaults to a
+   low-contrast grey that's unreadable on our white cards in light mode. This
+   is deliberately LOW specificity (no !important, no wildcard class hacks) so
+   it only fills in where Gradio has no more-specific rule of its own — e.g.
+   it must NOT touch Radio/Dropdown pill internals, which rely on their own
+   selected/unselected color rules to render at all. */
 .gradio-container p, .gradio-container span, .gradio-container div,
 .gradio-container li, .gradio-container td, .gradio-container small{
   color:var(--ink);
-}
-.gradio-container [class*="wrap"], .gradio-container [class*="empty"],
-.gradio-container [class*="upload" i], .gradio-container [class*="file"],
-.gradio-container [class*="icon-button"]{
-  color:var(--ink)!important; opacity:1!important;
-}
-.gradio-container [class*="wrap"] svg, .gradio-container [class*="empty"] svg,
-.gradio-container [class*="upload" i] svg{
-  color:var(--muted)!important; opacity:1!important;
-}
-
-/* Any component with a dark/near-black surface (audio & video player control
-   bars, code/JSON viewers) — golden-amber text/icons, consistent everywhere. */
-.gradio-container [class*="controls" i], .gradio-container [class*="player" i],
-.gradio-container [class*="waveform" i]{
-  color:var(--amber)!important;
-}
-.gradio-container [class*="controls" i] svg, .gradio-container [class*="player" i] svg,
-.gradio-container [class*="waveform" i] svg{
-  fill:var(--amber)!important; color:var(--amber)!important;
 }
 """
 
