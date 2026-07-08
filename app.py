@@ -5,6 +5,7 @@ Run:  python app.py        (set IMAGE_TALK_SHARE=1 for a public link)
 """
 import os
 import sys
+import threading
 
 PROJECT_ROOT = os.environ.get(
     "IMAGE_TALK_ROOT", os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +56,14 @@ LANGS = {"English": "en", "Hindi": "hi"}
 
 
 # ── GPU helpers ─────────────────────────────────────────────────────────────
+# Gradio's queue processes multiple tab requests concurrently (max_size=4), but
+# they all share one physical GPU. Without this, e.g. a Text->Image generation
+# and an Image Edit click a few seconds apart can both be mid-load at once and
+# collectively exceed VRAM (observed: FLUX.1-Kontext-dev OOM while SDXL was
+# still resident from a concurrent request). Serialize all GPU-heavy tabs.
+GPU_LOCK = threading.Lock()
+
+
 def free_inprocess():
     """Free VRAM held by the main-env engines before a subprocess job."""
     try:
@@ -115,6 +124,7 @@ def run_talking_video(image, ref_audio, text, language, engine, size, enhance,
         return None, warn("Upload reference audio for the voice")
     if not text or not text.strip():
         return None, warn("Enter the text to speak")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         progress(0.15, desc="Cloning voice & synthesizing speech ...")
@@ -131,12 +141,15 @@ def run_talking_video(image, ref_audio, text, language, engine, size, enhance,
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 # ── Feature 2: Transcript edit + relip ──────────────────────────────────────
 def do_extract(video, progress=gr.Progress()):
     if video is None:
         return "", None, warn("Upload a video first")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         progress(0.3, desc="Transcribing (WhisperX) ...")
@@ -145,6 +158,8 @@ def do_extract(video, progress=gr.Progress()):
                                f"lang={state['language']}")
     except Exception as e:
         return "", None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 def do_relip(state, edited_text, method, steps, guidance,
@@ -153,6 +168,7 @@ def do_relip(state, edited_text, method, steps, guidance,
         return None, warn("Extract a transcript first")
     if not edited_text or not edited_text.strip():
         return None, warn("Transcript is empty")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         method_map = {"LatentSync": "latentsync", "MuseTalk": "musetalk",
@@ -168,12 +184,15 @@ def do_relip(state, edited_text, method, steps, guidance,
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 # ── Feature 3: Text → image ─────────────────────────────────────────────────
 def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed):
     if not prompt or not prompt.strip():
         return None, warn("Prompt required")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         v = {"SDXL Realistic (best, open)": "sdxl_real",
@@ -187,6 +206,8 @@ def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed)
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 # ── Avatar Studio (Tier A: InstantID identity → voice → talking video) ──────
@@ -197,6 +218,7 @@ def run_avatar(photos, video, scene_prompt, speak_text, language, voice_mode,
         return None, None, warn("Describe the portrait/scene")
     if not speak_text or not speak_text.strip():
         return None, None, warn("Enter what the person should say")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         # 1. gather identity photos
@@ -235,6 +257,8 @@ def run_avatar(photos, video, scene_prompt, speak_text, language, voice_mode,
         return portrait, out, ok(os.path.basename(out))
     except Exception as e:
         return None, None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 # ── Image Edit (FLUX.1-Kontext-dev) ─────────────────────────────────────────
@@ -243,6 +267,7 @@ def run_edit(image, prompt, steps, guidance, seed):
         return None, warn("Upload an image to edit")
     if not prompt or not prompt.strip():
         return None, warn("Describe the edit")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         out = diffusion.edit(image_path=image, prompt=prompt,
@@ -250,6 +275,8 @@ def run_edit(image, prompt, steps, guidance, seed):
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 # ── Feature 4: Face swap ────────────────────────────────────────────────────
@@ -261,6 +288,7 @@ def run_faceswap(source, mode, target_img, target_vid, enhancer,
     target = target_vid if is_video else target_img
     if target is None:
         return None, None, warn(f"Upload a target {'video' if is_video else 'image'}")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         faceswap.load()
@@ -275,11 +303,14 @@ def run_faceswap(source, mode, target_img, target_vid, enhancer,
         return out, None, ok(os.path.basename(out))
     except Exception as e:
         return None, None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 def run_ltx(prompt, negative, width, height, num_frames, steps, guidance):
     if not prompt or not prompt.strip():
         return None, warn("Prompt required")
+    GPU_LOCK.acquire()
     try:
         free_inprocess()
         out = ltx.run(prompt=prompt, negative_prompt=negative,
@@ -289,6 +320,8 @@ def run_ltx(prompt, negative, width, height, num_frames, steps, guidance):
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 def toggle_swap_mode(mode):

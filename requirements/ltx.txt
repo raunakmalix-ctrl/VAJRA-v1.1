@@ -2,11 +2,15 @@
 # torch ~2.7 (cu126) is installed separately by setup/make_ltx_venv.sh.
 # LTX2Pipeline is recent, so pull diffusers from git main.
 diffusers @ git+https://github.com/huggingface/diffusers.git
-transformers
+# Unpinned transformers pulled a version whose slow->fast tokenizer converter
+# misdetects LTX's T5 tokenizer (a sentencepiece spiece.model) as tiktoken
+# vocab data and fails to parse it ("Error parsing line b'\x0e' in
+# .../tokenizer/spiece.model"). Bound below that regression.
+transformers>=4.46,<4.50
 accelerate
 safetensors
 sentencepiece
-tiktoken   # LTX/Kontext tokenizer configs are tiktoken-format
+tiktoken   # Kontext's CLIP/T5 tokenizer configs on some snapshots need this
 imageio
 imageio-ffmpeg
 av

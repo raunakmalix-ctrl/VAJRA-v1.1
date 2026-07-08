@@ -42,8 +42,18 @@ def _load_app():
         from insightface.app import FaceAnalysis
         print("[Avatar] Loading antelopev2 ...")
         _fix_antelopev2()
-        _app = FaceAnalysis(name="antelopev2", root=INSIGHTFACE_ROOT,
-                            providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+        kwargs = dict(name="antelopev2", root=INSIGHTFACE_ROOT,
+                     providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+        try:
+            _app = FaceAnalysis(**kwargs)
+        except AssertionError:
+            # First-ever run: insightface downloads+extracts the zip as a side
+            # effect of this same constructor call, in nested form, AFTER our
+            # pre-check above already ran and found nothing to flatten yet.
+            # The files exist now -- flatten and retry once instead of making
+            # the user click Generate a second time.
+            _fix_antelopev2()
+            _app = FaceAnalysis(**kwargs)
         _app.prepare(ctx_id=0, det_size=(640, 640))
     return _app
 

@@ -25,9 +25,13 @@ def main():
 
     print("[kontext_worker] Loading FLUX.1-Kontext-dev ...", flush=True)
     pipe = FluxKontextPipeline.from_pretrained(args["repo"], torch_dtype=torch.bfloat16)
+    # FLUX.1-Kontext-dev's own weights (12B transformer + T5-XXL encoder, bf16)
+    # are ~33GB by themselves -- within a hair of a 40GB A100's full capacity
+    # even with nothing else on the GPU (observed OOM: "Tried to allocate
+    # 108.00 MiB" with the device already full). A full pipe.to("cuda") has no
+    # real safety margin at this model size; always offload instead.
     if torch.cuda.is_available():
-        total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-        pipe.to("cuda") if total_gb >= 38 else pipe.enable_model_cpu_offload()
+        pipe.enable_model_cpu_offload()
 
     generator = None
     if int(args.get("seed", -1)) >= 0:
