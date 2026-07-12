@@ -14,12 +14,10 @@ echo "==> cloning model repos"
 clone() {  # clone <url> <dir>
   if [ ! -d "$2/.git" ]; then git clone --depth 1 "$1" "$2"; else echo "  $2 exists"; fi
 }
-clone https://github.com/OpenTalker/SadTalker.git      "$THIRD_PARTY/SadTalker"
 clone https://github.com/Rudrabha/Wav2Lip.git          "$THIRD_PARTY/Wav2Lip"
 clone https://github.com/bytedance/LatentSync.git       "$THIRD_PARTY/LatentSync"
 clone https://github.com/TMElyralab/MuseTalk.git        "$THIRD_PARTY/MuseTalk"
 clone https://github.com/sczhou/CodeFormer.git          "$THIRD_PARTY/CodeFormer"
-clone https://github.com/instantX-research/InstantID.git "$THIRD_PARTY/InstantID"
 
 echo "==> pip: main requirements"
 pip install -q -r "$ROOT/requirements/main.txt"
@@ -57,7 +55,7 @@ bash "$ROOT/setup/patch_thirdparty.sh"
 # face swap / InsightFace onto CPU. Re-pin the SAME CUDA-12-compatible GPU
 # version as requirements/main.txt (unpinned "latest" wants CUDA 13, which
 # Colab doesn't have — "libcudart.so.13: cannot open shared object file").
-echo "==> ensuring onnxruntime-gpu==1.19.2 (GPU provider for face swap/InstantID)"
+echo "==> ensuring onnxruntime-gpu==1.19.2 (GPU provider for face swap)"
 pip uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
 pip install -q onnxruntime-gpu==1.19.2
 

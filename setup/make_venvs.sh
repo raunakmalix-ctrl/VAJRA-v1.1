@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the three isolated venvs for the subprocess engines.
+# Build the two isolated venvs for the subprocess engines (voice, lip-sync).
 #
 # These hold legacy torch/transformers stacks that DON'T have Python 3.12 wheels,
 # while Colab now runs Python 3.12. So we install Python 3.10 via apt and build
@@ -58,17 +58,6 @@ build_voice() {
   "$VENVS/venv_voice/bin/pip" install -q -r "$ROOT/requirements/voice.txt"
 }
 
-build_sadtalker() {
-  echo "==> venv_sadtalker (SadTalker)"
-  make_venv venv_sadtalker
-  strip_torch_pins "$TP/SadTalker/requirements.txt"
-  "$VENVS/venv_sadtalker/bin/pip" install -q -r "$ROOT/requirements/sadtalker.txt" || true
-  [ -f "$TP/SadTalker/requirements.txt" ] && \
-    "$VENVS/venv_sadtalker/bin/pip" install -q -r "$TP/SadTalker/requirements.txt" || true
-  "$VENVS/venv_sadtalker/bin/pip" install -q \
-    torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url "$CU"
-}
-
 build_latentsync() {
   echo "==> venv_latentsync (LatentSync + Wav2Lip)"
   make_venv venv_latentsync
@@ -81,18 +70,17 @@ build_latentsync() {
     torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url "$CU"
 }
 
-# The three venvs are fully independent (separate dirs, separate pip binaries)
+# The two venvs are fully independent (separate dirs, separate pip binaries)
 # -- build them concurrently instead of one after another. Each logs to its
 # own file so parallel output doesn't interleave into a garbled cell output;
 # failures still fail the whole step and print their log tail for debugging.
-echo "==> building venv_voice / venv_sadtalker / venv_latentsync in parallel"
+echo "==> building venv_voice / venv_latentsync in parallel"
 LOGS="$VENVS/.build-logs"; mkdir -p "$LOGS"
 build_voice      > "$LOGS/voice.log"      2>&1 &  PID_VOICE=$!
-build_sadtalker  > "$LOGS/sadtalker.log"  2>&1 &  PID_SADTALKER=$!
 build_latentsync > "$LOGS/latentsync.log" 2>&1 &  PID_LATENTSYNC=$!
 
 fail=0
-for spec in "voice:$PID_VOICE" "sadtalker:$PID_SADTALKER" "latentsync:$PID_LATENTSYNC"; do
+for spec in "voice:$PID_VOICE" "latentsync:$PID_LATENTSYNC"; do
   name="${spec%%:*}"; pid="${spec##*:}"
   if wait "$pid"; then
     echo "==> venv_$name OK"

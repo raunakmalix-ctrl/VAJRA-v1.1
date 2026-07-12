@@ -10,7 +10,6 @@ Notes:
 """
 import os
 import sys
-import subprocess
 import urllib.request
 
 # Allow running as `python setup/download_models.py` from the project root.
@@ -18,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import (
     MODEL_ROOT, XTTS_DIR, INSIGHTFACE_ROOT, INSWAPPER_PATH, GFPGAN_PATH,
-    WAV2LIP_CKPT, SADTALKER_DIR, LATENTSYNC_DIR, INSTANTID_MODELS,
+    WAV2LIP_CKPT, LATENTSYNC_DIR,
 )
 
 # Empty string -> None, otherwise hf_hub builds an illegal "Bearer " header.
@@ -80,18 +79,6 @@ def wav2lip():
           "models/wav2lip_gan.pth", WAV2LIP_CKPT)
 
 
-def sadtalker():
-    # Use SadTalker's own downloader -> third_party/SadTalker/checkpoints
-    sentinel = os.path.join(SADTALKER_DIR, "checkpoints",
-                            "SadTalker_V0.0.2_512.safetensors")
-    if os.path.exists(sentinel):
-        print("  exists"); return
-    script = os.path.join(SADTALKER_DIR, "scripts", "download_models.sh")
-    if not os.path.exists(script):
-        print("  SadTalker repo not cloned; run install_main.sh first"); return
-    subprocess.run(["bash", script], cwd=SADTALKER_DIR, check=True)
-
-
 def latentsync():
     # LatentSync 1.5 weights -> third_party/LatentSync/checkpoints
     ckpt_dir = os.path.join(LATENTSYNC_DIR, "checkpoints")
@@ -100,22 +87,11 @@ def latentsync():
     _hf_snapshot("ByteDance/LatentSync-1.5", ckpt_dir)
 
 
-def instantid():
-    # Avatar Studio: InstantID ip-adapter + ControlNet. antelopev2 detector
-    # auto-downloads via insightface on first Avatar run.
-    if os.path.exists(os.path.join(INSTANTID_MODELS, "ip-adapter.bin")):
-        print("  exists"); return
-    _hf_snapshot("InstantX/InstantID", INSTANTID_MODELS,
-                 allow_patterns=["ip-adapter.bin", "ControlNetModel/*"])
-
-
 def main():
     step("XTTS-v2 (voice clone)", xtts)
-    step("InstantID (avatar identity)", instantid)
     step("inswapper_128 (face swap)", inswapper)
     step("GFPGAN v1.4 (enhance)", gfpgan)
     step("Wav2Lip GAN (lip-sync fallback)", wav2lip)
-    step("SadTalker (talking head)", sadtalker)
     step("LatentSync 1.5 (lip re-sync)", latentsync)
     print("\nAll downloads attempted. MODEL_ROOT =", MODEL_ROOT)
     if not HF_TOKEN:

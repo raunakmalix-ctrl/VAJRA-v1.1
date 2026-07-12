@@ -25,15 +25,10 @@ for _d in (MODEL_ROOT, OUTPUTS_DIR, UPLOADS_DIR, THIRD_PARTY, VENV_ROOT):
     os.makedirs(_d, exist_ok=True)
 
 # ── Cloned model repositories (third_party/) ────────────────────────────────
-SADTALKER_DIR  = os.path.join(THIRD_PARTY, "SadTalker")
 WAV2LIP_DIR    = os.path.join(THIRD_PARTY, "Wav2Lip")
 LATENTSYNC_DIR = os.path.join(THIRD_PARTY, "LatentSync")
 MUSETALK_DIR   = os.path.join(THIRD_PARTY, "MuseTalk")
 CODEFORMER_DIR = os.path.join(THIRD_PARTY, "CodeFormer")
-INSTANTID_DIR  = os.path.join(THIRD_PARTY, "InstantID")   # pipeline code
-
-# Avatar Studio (InstantID) — identity from photos. Runs in the main env.
-INSTANTID_MODELS = os.path.join(MODEL_ROOT, "instantid")  # ip-adapter.bin + ControlNetModel/
 
 # MuseTalk v1.5 weights live under its repo models/ (download_weights.sh).
 MUSETALK_UNET        = os.path.join(MUSETALK_DIR, "models", "musetalkV15", "unet.pth")
@@ -55,10 +50,6 @@ CODEFORMER_PATH  = os.path.join(MODEL_ROOT, "codeformer", "codeformer.pth")
 # Voice clone
 XTTS_DIR = os.path.join(MODEL_ROOT, "xtts")
 
-# Talking head — SadTalker reads from its own repo checkpoints dir (populated
-# by its bundled downloader, which is the reliable path).
-SADTALKER_CKPT_DIR = os.path.join(SADTALKER_DIR, "checkpoints")
-
 # Lip sync — LatentSync likewise reads from its repo checkpoints dir.
 WAV2LIP_CKPT      = os.path.join(MODEL_ROOT, "wav2lip", "wav2lip_gan.pth")
 LATENTSYNC_CKPT   = os.path.join(LATENTSYNC_DIR, "checkpoints", "latentsync_unet.pt")
@@ -72,14 +63,22 @@ def _venv_python(name):
     return os.path.join(VENV_ROOT, name, "bin", "python")
 
 VENV_VOICE_PY      = _venv_python("venv_voice")
-VENV_SADTALKER_PY  = _venv_python("venv_sadtalker")
 VENV_LATENTSYNC_PY = _venv_python("venv_latentsync")
 VENV_LTX_PY        = _venv_python("venv_ltx")
 VENV_MUSETALK_PY   = _venv_python("venv_musetalk")
+VENV_WAN_PY        = _venv_python("venv_wan")
 
 # LTX-Video 0.9.7-distilled (Lightricks) text -> video. Open (no token), fast
 # few-step. Runs in its own venv (built by setup/make_ltx_venv.sh).
 LTX_REPO = "Lightricks/LTX-Video-0.9.7-distilled"
+
+# Wan2.2-I2V (Alibaba/Tongyi Wanxiang) image+prompt -> motion video, identity
+# preserving, handles multi-subject images (not per-face like SadTalker/
+# MuseTalk -- the uploaded photo is the first frame, diffusion generates the
+# rest following the prompt). Apache-2.0, open. Runs in its own venv (built by
+# setup/make_wan_venv.sh) -- needs transformers 4.49-4.51.3, incompatible with
+# venv_ltx's <4.50 pin (see requirements/ltx.txt), hence a separate venv.
+WAN_I2V_REPO = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
 
 # ── FFmpeg (Colab: apt-installed, on PATH) ──────────────────────────────────
 FFMPEG_PATH  = shutil.which("ffmpeg") or "ffmpeg"

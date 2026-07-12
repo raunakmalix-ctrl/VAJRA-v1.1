@@ -42,17 +42,10 @@ from core.config import OUTPUTS_DIR
 
 diffusion   = ENGINES["diffusion"]
 faceswap    = ENGINES["faceswap"]
-voice       = ENGINES["voice"]
-talkingface = ENGINES["talkingface"]
 transcript  = ENGINES["transcript"]
 ltx         = ENGINES["ltx"]
-musetalk    = ENGINES["musetalk"]
 media       = ENGINES["media"]
-avatar      = ENGINES["avatar"]
-
-from engines.voice_engine import PRESET_VOICES   # noqa: E402
-
-LANGS = {"English": "en", "Hindi": "hi"}
+motion      = ENGINES["motion"]
 
 
 # ── GPU helpers ─────────────────────────────────────────────────────────────
@@ -91,7 +84,7 @@ def ribbon_html():
         "<span class='sr-item'><span class='sr-dot'></span><b class='sr-live'>ONLINE</b></span>"
         "<span class='sr-item'><i class='ti ti-shield-lock'></i>100% OFFLINE / LOCAL</span>"
         f"<span class='sr-item'><i class='ti ti-cpu'></i>Compute&nbsp;<b>{dev}</b></span>"
-        "<span class='sr-item'><i class='ti ti-stack-2'></i><b>8</b>&nbsp;Modules</span>"
+        "<span class='sr-item'><i class='ti ti-stack-2'></i><b>6</b>&nbsp;Modules</span>"
         "</div>"
     )
 
@@ -116,37 +109,7 @@ def err(msg):
 def warn(msg): return f"<span class='status-warn'>⚠ {msg}</span>"
 
 
-# ── Feature 1: Talking video ────────────────────────────────────────────────
-def run_talking_video(image, ref_audio, text, language, engine, size, enhance,
-                      still, preprocess, progress=gr.Progress()):
-    if image is None:
-        return None, warn("Upload a portrait image")
-    if ref_audio is None:
-        return None, warn("Upload reference audio for the voice")
-    if not text or not text.strip():
-        return None, warn("Enter the text to speak")
-    GPU_LOCK.acquire()
-    try:
-        free_inprocess()
-        progress(0.15, desc="Cloning voice & synthesizing speech ...")
-        wav = voice.run(text=text, reference_audio_path=ref_audio,
-                        language=LANGS.get(language, "en"))
-        if engine.startswith("MuseTalk"):
-            progress(0.55, desc="Lip-syncing (MuseTalk) ...")
-            out = musetalk.run(face_path=image, audio_path=wav)
-        else:
-            progress(0.55, desc="Animating portrait (SadTalker) ...")
-            out = talkingface.run(portrait_path=image, audio_path=wav,
-                                  size=int(size), enhance_face=enhance,
-                                  still_mode=still, preprocess=preprocess)
-        return out, ok(os.path.basename(out))
-    except Exception as e:
-        return None, err(str(e))
-    finally:
-        GPU_LOCK.release()
-
-
-# ── Feature 2: Transcript edit + relip ──────────────────────────────────────
+# ── Feature: Transcript edit + relip ─────────────────────────────────────────
 def do_extract(video, progress=gr.Progress()):
     if video is None:
         return "", None, warn("Upload a video first")
@@ -189,7 +152,7 @@ def do_relip(state, edited_text, method, steps, guidance,
         GPU_LOCK.release()
 
 
-# ── Feature 3: Text → image ─────────────────────────────────────────────────
+# ── Feature: Text → image ────────────────────────────────────────────────────
 def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed):
     if not prompt or not prompt.strip():
         return None, warn("Prompt required")
@@ -207,57 +170,6 @@ def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed)
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
-    finally:
-        GPU_LOCK.release()
-
-
-# ── Avatar Studio (Tier A: InstantID identity → voice → talking video) ──────
-def run_avatar(photos, video, scene_prompt, speak_text, language, voice_mode,
-               preset, ref_audio, anim_engine, steps, guidance, seed,
-               progress=gr.Progress()):
-    if not scene_prompt or not scene_prompt.strip():
-        return None, None, warn("Describe the portrait/scene")
-    if not speak_text or not speak_text.strip():
-        return None, None, warn("Enter what the person should say")
-    GPU_LOCK.acquire()
-    try:
-        free_inprocess()
-        # 1. gather identity photos
-        imgs = [f.name if hasattr(f, "name") else f for f in (photos or [])]
-        if video:
-            progress(0.1, desc="Sampling frames from video ...")
-            imgs = imgs + avatar.extract_frames(video, n=8)
-        if not imgs:
-            return None, None, warn("Upload photos or a video of the person")
-
-        # 2. identity portrait (InstantID)
-        progress(0.25, desc="Building identity portrait (InstantID) ...")
-        portrait = avatar.build_portrait(imgs, scene_prompt, steps=int(steps),
-                                         guidance=float(guidance), seed=int(seed))
-
-        # 3. voice
-        progress(0.6, desc="Synthesizing voice ...")
-        avatar.unload()   # free InstantID before the voice/animation subprocesses
-        free_inprocess()
-        lang = LANGS.get(language, "en")
-        if voice_mode.startswith("Preset"):
-            wav = voice.run(text=speak_text, speaker=PRESET_VOICES.get(preset),
-                            language=lang)
-        else:
-            if ref_audio is None:
-                return None, None, warn("Upload/record a voice to clone, or pick Preset")
-            wav = voice.run(text=speak_text, reference_audio_path=ref_audio, language=lang)
-
-        # 4. animate
-        progress(0.8, desc="Animating ...")
-        if anim_engine.startswith("MuseTalk"):
-            out = musetalk.run(face_path=portrait, audio_path=wav)
-        else:
-            out = talkingface.run(portrait_path=portrait, audio_path=wav,
-                                  size=512, preprocess="full")
-        return portrait, out, ok(os.path.basename(out))
-    except Exception as e:
-        return None, None, err(str(e))
     finally:
         GPU_LOCK.release()
 
@@ -280,7 +192,7 @@ def run_edit(image, prompt, steps, guidance, seed):
         GPU_LOCK.release()
 
 
-# ── Feature 4: Face swap ────────────────────────────────────────────────────
+# ── Feature: Face swap ───────────────────────────────────────────────────────
 def run_faceswap(source, mode, target_img, target_vid, enhancer,
                  progress=gr.Progress()):
     if source is None:
@@ -308,16 +220,24 @@ def run_faceswap(source, mode, target_img, target_vid, enhancer,
         GPU_LOCK.release()
 
 
-def run_ltx(prompt, negative, width, height, num_frames, steps, guidance):
+# ── Feature: Text → Video (LTX text-only, or Wan2.2-I2V with a reference photo)
+def run_ltx(image, prompt, negative, width, height, num_frames, steps, guidance):
     if not prompt or not prompt.strip():
         return None, warn("Prompt required")
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        out = ltx.run(prompt=prompt, negative_prompt=negative,
-                      width=int(width), height=int(height),
-                      num_frames=int(num_frames), steps=int(steps),
-                      guidance=float(guidance))
+        if image:
+            out = motion.run(image_path=image, prompt=prompt,
+                             negative_prompt=negative,
+                             width=int(width), height=int(height),
+                             num_frames=int(num_frames),
+                             guidance=float(guidance))
+        else:
+            out = ltx.run(prompt=prompt, negative_prompt=negative,
+                          width=int(width), height=int(height),
+                          num_frames=int(num_frames), steps=int(steps),
+                          guidance=float(guidance))
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
@@ -405,46 +325,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
 
     with gr.Tabs() as tabs:
 
-        # ── 01 Talking Video ────────────────────────────────────────────────
-        with gr.Tab("01 · Talking Video", id=0):
-            gr.HTML(hero("ti-user-video", "Talking Video",
-                "Turn a portrait + a voice sample + text into a talking video."))
-            with gr.Row(equal_height=False):
-                with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>Portrait &amp; Voice</div>")
-                    tv_img   = gr.Image(label="Portrait (clear frontal face)",
-                                        type="filepath", elem_classes=["output-media"])
-                    tv_audio = gr.Audio(label="Reference voice (5–30s to clone)",
-                                        type="filepath")
-                    tv_ainfo = gr.HTML("")
-                    tv_text  = gr.Textbox(label="Text to speak", lines=4,
-                        placeholder="Type what the person should say (English or Hindi)…")
-                    tv_lang  = gr.Radio(["English", "Hindi"], value="English",
-                                        label="Language")
-                    tv_engine = gr.Radio(
-                        ["SadTalker (head motion)", "MuseTalk (sharp lips)"],
-                        value="SadTalker (head motion)",
-                        label="Engine  (MuseTalk = sharper lips, static head)")
-                    with gr.Row():
-                        tv_size = gr.Radio(["256", "512"], value="512",
-                                           label="Resolution")
-                        tv_enh  = gr.Checkbox(label="GFPGAN enhance", value=True)
-                        tv_still = gr.Checkbox(label="Still mode", value=False)
-                    tv_pre = gr.Radio(["full", "crop", "resize"], value="full",
-                        label="Framing  (full = whole image · crop = face only)")
-                    tv_btn = gr.Button("▶  Generate Talking Video", variant="primary")
-                with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>Output</div>")
-                    tv_out = gr.Video(label="", elem_classes=["output-media"])
-                    tv_status = gr.HTML(AWAIT)
-            tv_audio.change(audio_info, [tv_audio], [tv_ainfo])
-            tv_btn.click(run_talking_video,
-                         [tv_img, tv_audio, tv_text, tv_lang, tv_engine, tv_size,
-                          tv_enh, tv_still, tv_pre],
-                         [tv_out, tv_status])
-
-        # ── 02 Edit & Relip ─────────────────────────────────────────────────
-        with gr.Tab("02 · Edit & Relip", id=1):
+        # ── 01 Edit & Relip ─────────────────────────────────────────────────
+        with gr.Tab("01 · Edit & Relip", id=0):
             ed_state = gr.State(None)
             gr.HTML(hero("ti-pencil", "Edit & Relip",
                 "Pull a video's transcript, change words, re-sync the lips."))
@@ -476,8 +358,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                            [ed_state, ed_text, ed_method, ed_steps, ed_guid],
                            [ed_out, ed_status])
 
-        # ── 03 Text → Image ─────────────────────────────────────────────────
-        with gr.Tab("03 · Text → Image", id=2):
+        # ── 02 Text → Image ─────────────────────────────────────────────────
+        with gr.Tab("02 · Text → Image", id=1):
             gr.HTML(hero("ti-photo", "Text → Image",
                 "Generate photoreal images from a prompt (SDXL / FLUX)."))
             with gr.Row(equal_height=False):
@@ -509,8 +391,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                           ti_steps, ti_guid, ti_seed],
                          [ti_out, ti_status])
 
-        # ── 04 Face Swap ────────────────────────────────────────────────────
-        with gr.Tab("04 · Face Swap", id=3):
+        # ── 03 Face Swap ─────────────────────────────────────────────────────
+        with gr.Tab("03 · Face Swap", id=2):
             gr.HTML(hero("ti-mask", "Face Swap",
                 "Swap a source face onto a target image or every video frame."))
             with gr.Row(equal_height=False):
@@ -542,17 +424,25 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                          [fs_src, fs_mode, fs_timg, fs_tvid, fs_enh],
                          [fs_oimg, fs_ovid, fs_status])
 
-        # ── 05 Text → Video (LTX-0.9.7-distilled) ────────────────────────────
-        with gr.Tab("05 · Text → Video", id=4):
+        # ── 04 Text → Video (LTX-0.9.7-distilled · Wan2.2-I2V w/ a photo) ────
+        with gr.Tab("04 · Text → Video", id=3):
             gr.HTML(hero("ti-movie", "Text → Video",
-                "Generate short video clips from a prompt (LTX-Video)."))
+                "Prompt → video (LTX-Video). Add a reference photo to animate "
+                "it instead — identity-preserving motion video (Wan2.2-I2V)."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>LTX-Video 0.9.7-distilled "
-                            "(open · needs the optional venv_ltx — see notebook)</div>")
+                            "(open · needs the optional venv_ltx) — or Wan2.2-I2V "
+                            "(needs the optional venv_wan) if a photo is given. "
+                            "Width/height/frames are shared between both modes and "
+                            "tuned for LTX by default.</div>")
+                    lx_img = gr.Image(label="Reference photo (optional) — animate "
+                        "this instead of generating from scratch", type="filepath",
+                        elem_classes=["output-media"])
                     lx_prompt = gr.Textbox(label="Prompt", lines=3,
-                        placeholder="A cinematic drone shot over snowy mountains at sunrise…")
-                    lx_neg = gr.Textbox(label="Negative prompt", lines=1,
+                        placeholder="A cinematic drone shot over snowy mountains at "
+                                    "sunrise… or, with a photo: make them dance in joy")
+                    lx_neg = gr.Textbox(label="Negative prompt (text-only mode)", lines=1,
                         value="shaky, glitchy, low quality, watermark")
                     with gr.Row():
                         lx_w = gr.Slider(384, 1280, value=704, step=32, label="Width")
@@ -560,7 +450,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     with gr.Row():
                         lx_frames = gr.Slider(49, 193, value=121, step=8,
                                               label="Frames (~fps·sec)")
-                        lx_steps  = gr.Slider(4, 30, value=7, step=1, label="Steps")
+                        lx_steps  = gr.Slider(4, 30, value=7, step=1,
+                                              label="Steps (text-only mode)")
                         lx_guid   = gr.Slider(1.0, 5.0, value=1.0, step=0.5, label="Guidance")
                     lx_btn = gr.Button("▶  Generate Video", variant="primary")
                 with gr.Column(scale=1):
@@ -568,9 +459,34 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     lx_out = gr.Video(label="", elem_classes=["output-media"])
                     lx_status = gr.HTML(AWAIT)
             lx_btn.click(run_ltx,
-                         [lx_prompt, lx_neg, lx_w, lx_h,
+                         [lx_img, lx_prompt, lx_neg, lx_w, lx_h,
                           lx_frames, lx_steps, lx_guid],
                          [lx_out, lx_status])
+
+        # ── 05 Image Edit (FLUX.1-Kontext-dev) ───────────────────────────────
+        with gr.Tab("05 · Image Edit", id=4):
+            gr.HTML(hero("ti-wand", "Image Edit",
+                "Edit an image by instruction — change background, style, add objects."))
+            with gr.Row(equal_height=False):
+                with gr.Column(scale=1):
+                    gr.HTML("<div class='section-label'>Instruction editing "
+                            "(FLUX-Kontext · needs HF_TOKEN + license + venv_ltx / cell 7b)</div>")
+                    ie_img = gr.Image(label="Image to edit", type="filepath",
+                                      elem_classes=["output-media"])
+                    ie_prompt = gr.Textbox(label="Edit instruction", lines=3,
+                        placeholder="e.g. change the background to a sunset beach; "
+                                    "make it black-and-white; add sunglasses")
+                    with gr.Row():
+                        ie_steps = gr.Slider(10, 40, value=28, step=1, label="Steps")
+                        ie_guid  = gr.Slider(1.0, 5.0, value=2.5, step=0.5, label="Guidance")
+                    ie_seed = gr.Number(label="Seed (−1 = random)", value=-1, precision=0)
+                    ie_btn  = gr.Button("▶  Apply Edit", variant="primary")
+                with gr.Column(scale=1):
+                    gr.HTML("<div class='section-label'>Output</div>")
+                    ie_out = gr.Image(label="", elem_classes=["output-media"])
+                    ie_status = gr.HTML(AWAIT)
+            ie_btn.click(run_edit, [ie_img, ie_prompt, ie_steps, ie_guid, ie_seed],
+                         [ie_out, ie_status])
 
         # ── 06 Media Studio (ffmpeg/CPU — no GPU cost) ───────────────────────
         with gr.Tab("06 · Media Studio", id=5):
@@ -607,13 +523,11 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     with gr.Column():
                         ms_ta_out = gr.Audio(label="Trimmed", type="filepath")
                         ms_ta_st = gr.HTML("")
-                        with gr.Row():
-                            ms_ta_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
-                            ms_ta_send_voice = gr.Button("→ Talking Video voice", size="sm")
+                        ms_ta_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
                 ms_ta_btn.click(m_trim_audio, [ms_ta_in, ms_ta_s, ms_ta_e],
                                 [ms_ta_out, ms_ta_st, ms_ta_dl])
 
-            with gr.Accordion("🎞  Grab frame → portrait", open=False):
+            with gr.Accordion("🎞  Grab frame", open=False):
                 with gr.Row():
                     with gr.Column():
                         ms_gf_in = gr.Video(label="Video", elem_classes=["output-media"])
@@ -623,12 +537,10 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                         ms_gf_out = gr.Image(label="Frame", type="filepath",
                                              elem_classes=["output-media"])
                         ms_gf_st = gr.HTML("")
-                        with gr.Row():
-                            ms_gf_send_portrait = gr.Button("→ Talking Video portrait", size="sm")
-                            ms_gf_send_face = gr.Button("→ Face Swap source", size="sm")
+                        ms_gf_send_face = gr.Button("→ Face Swap source", size="sm")
                 ms_gf_btn.click(m_grab, [ms_gf_in, ms_gf_t], [ms_gf_out, ms_gf_st])
 
-            with gr.Accordion("🎧  Clean audio for voice cloning", open=False):
+            with gr.Accordion("🎧  Clean audio (denoise + normalize)", open=False):
                 with gr.Row():
                     with gr.Column():
                         ms_ca_in = gr.Audio(label="Audio or video", type="filepath")
@@ -636,9 +548,7 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     with gr.Column():
                         ms_ca_out = gr.Audio(label="Cleaned", type="filepath")
                         ms_ca_st = gr.HTML("")
-                        with gr.Row():
-                            ms_ca_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
-                            ms_ca_send_voice = gr.Button("→ Talking Video voice", size="sm")
+                        ms_ca_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
                 ms_ca_btn.click(m_clean, [ms_ca_in], [ms_ca_out, ms_ca_st, ms_ca_dl])
 
             with gr.Accordion("🪄  Remove background (portrait)", open=False):
@@ -653,9 +563,7 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                         ms_bg_out = gr.Image(label="Result", type="filepath",
                                              elem_classes=["output-media"])
                         ms_bg_st = gr.HTML("")
-                        with gr.Row():
-                            ms_bg_send_portrait = gr.Button("→ Talking Video portrait", size="sm")
-                            ms_bg_send_face = gr.Button("→ Face Swap source", size="sm")
+                        ms_bg_send_face = gr.Button("→ Face Swap source", size="sm")
                 ms_bg_btn.click(m_removebg, [ms_bg_in, ms_bg_color], [ms_bg_out, ms_bg_st])
 
             with gr.Accordion("💬  Burn captions onto video", open=False):
@@ -717,102 +625,15 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                 ms_hist_zip_btn.click(zip_outputs, outputs=ms_hist_zip)
 
             # ── Send-to wiring (set target value + switch tab) ───────────────
-            ms_tv_send_relip.click(lambda p: (p, gr.Tabs(selected=1)),
+            ms_tv_send_relip.click(lambda p: (p, gr.Tabs(selected=0)),
                                    [ms_tv_out], [ed_video, tabs])
-            ms_ta_send_voice.click(lambda p: (p, gr.Tabs(selected=0)),
-                                   [ms_ta_out], [tv_audio, tabs])
-            ms_ca_send_voice.click(lambda p: (p, gr.Tabs(selected=0)),
-                                   [ms_ca_out], [tv_audio, tabs])
-            ms_gf_send_portrait.click(lambda p: (p, gr.Tabs(selected=0)),
-                                      [ms_gf_out], [tv_img, tabs])
-            ms_gf_send_face.click(lambda p: (p, gr.Tabs(selected=3)),
+            ms_gf_send_face.click(lambda p: (p, gr.Tabs(selected=2)),
                                   [ms_gf_out], [fs_src, tabs])
-            ms_bg_send_portrait.click(lambda p: (p, gr.Tabs(selected=0)),
-                                      [ms_bg_out], [tv_img, tabs])
-            ms_bg_send_face.click(lambda p: (p, gr.Tabs(selected=3)),
+            ms_bg_send_face.click(lambda p: (p, gr.Tabs(selected=2)),
                                   [ms_bg_out], [fs_src, tabs])
 
-        # ── 07 Image Edit (FLUX.1-Kontext-dev) ───────────────────────────────
-        with gr.Tab("07 · Image Edit", id=6):
-            gr.HTML(hero("ti-wand", "Image Edit",
-                "Edit an image by instruction — change background, style, add objects."))
-            with gr.Row(equal_height=False):
-                with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>Instruction editing "
-                            "(FLUX-Kontext · needs HF_TOKEN + license + venv_ltx / cell 7b)</div>")
-                    ie_img = gr.Image(label="Image to edit", type="filepath",
-                                      elem_classes=["output-media"])
-                    ie_prompt = gr.Textbox(label="Edit instruction", lines=3,
-                        placeholder="e.g. change the background to a sunset beach; "
-                                    "make it black-and-white; add sunglasses")
-                    with gr.Row():
-                        ie_steps = gr.Slider(10, 40, value=28, step=1, label="Steps")
-                        ie_guid  = gr.Slider(1.0, 5.0, value=2.5, step=0.5, label="Guidance")
-                    ie_seed = gr.Number(label="Seed (−1 = random)", value=-1, precision=0)
-                    ie_btn  = gr.Button("▶  Apply Edit", variant="primary")
-                with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>Output</div>")
-                    ie_out = gr.Image(label="", elem_classes=["output-media"])
-                    ie_status = gr.HTML(AWAIT)
-            ie_btn.click(run_edit, [ie_img, ie_prompt, ie_steps, ie_guid, ie_seed],
-                         [ie_out, ie_status])
-
-        # ── 08 Avatar Studio (photos → talking video) ────────────────────────
-        with gr.Tab("08 · Avatar Studio", id=7):
-            gr.HTML(hero("ti-user-star", "Avatar Studio",
-                "A few photos of a person → a talking video of them saying your script."))
-            with gr.Row(equal_height=False):
-                with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>1 · Identity "
-                            "(5–12 photos, or a short video)</div>")
-                    av_photos = gr.Files(label="Photos of the person",
-                                         file_count="multiple")
-                    av_video = gr.Video(label="…or a short video",
-                                        elem_classes=["output-media"])
-                    gr.HTML("<div class='section-label'>2 · Look &amp; script</div>")
-                    av_scene = gr.Textbox(label="Portrait / scene prompt", lines=2,
-                        placeholder="professional headshot, studio lighting, navy suit")
-                    av_text = gr.Textbox(label="What should the person say", lines=3,
-                        placeholder="Type the speech (English or Hindi)…")
-                    av_lang = gr.Radio(["English", "Hindi"], value="English",
-                                       label="Language")
-                    gr.HTML("<div class='section-label'>3 · Voice</div>")
-                    av_voicemode = gr.Radio(["Preset voice", "Clone from audio"],
-                                            value="Preset voice", label="Voice source")
-                    av_preset = gr.Dropdown(list(PRESET_VOICES.keys()),
-                                            value=list(PRESET_VOICES.keys())[0],
-                                            label="Preset voice", visible=True)
-                    av_ref = gr.Audio(label="Record or upload a voice to clone",
-                                      type="filepath", sources=["upload", "microphone"],
-                                      visible=False)
-                    av_engine = gr.Radio(
-                        ["SadTalker (head motion)", "MuseTalk (sharp lips)"],
-                        value="SadTalker (head motion)", label="Animation")
-                    with gr.Row():
-                        av_steps = gr.Slider(20, 40, value=30, step=1, label="ID steps")
-                        av_guid  = gr.Slider(1.0, 9.0, value=5.0, step=0.5, label="ID guidance")
-                        av_seed  = gr.Number(label="Seed (−1)", value=-1, precision=0)
-                    av_btn = gr.Button("▶  Generate Avatar Video", variant="primary")
-                with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>Identity portrait</div>")
-                    av_portrait = gr.Image(label="", elem_classes=["output-media"])
-                    gr.HTML("<div class='section-label'>Talking video</div>")
-                    av_out = gr.Video(label="", elem_classes=["output-media"])
-                    av_status = gr.HTML(AWAIT)
-
-            def _toggle_voice(mode):
-                preset = mode.startswith("Preset")
-                return gr.update(visible=preset), gr.update(visible=not preset)
-            av_voicemode.change(_toggle_voice, [av_voicemode], [av_preset, av_ref])
-
-            av_btn.click(run_avatar,
-                         [av_photos, av_video, av_scene, av_text, av_lang,
-                          av_voicemode, av_preset, av_ref, av_engine,
-                          av_steps, av_guid, av_seed],
-                         [av_portrait, av_out, av_status])
-
     vram = gr.HTML(vram_html())
-    for b in [tv_btn, ed_relip, ti_btn, fs_btn, lx_btn, ie_btn, av_btn]:
+    for b in [ed_relip, ti_btn, fs_btn, lx_btn, ie_btn]:
         b.click(vram_html, outputs=vram)
 
 
