@@ -1,8 +1,10 @@
 """
-Runs inside venv_ltx (diffusers from git, includes LTX2ImageToVideoPipeline).
-Reference photo + text prompt -> motion video WITH synchronized audio
-(LTX-2.3, diffusers/LTX-2.3-Diffusers). Single-stage generation (no Stage-2
-upsample/refine pass) -- see the "Multimodal Guidance" example at
+Runs inside venv_ltx2 (diffusers from git, includes LTX2Pipeline and
+LTX2ImageToVideoPipeline). Text prompt alone -> video, or reference photo +
+text prompt -> motion video, WITH synchronized audio either way (LTX-2.3,
+diffusers/LTX-2.3-Diffusers) -- picks the pipeline class based on whether
+args["image"] is given. Single-stage generation (no Stage-2 upsample/refine
+pass) -- see the "Prompt Enhancement" / "Multimodal Guidance" examples at
 https://huggingface.co/docs/diffusers/main/en/api/pipelines/ltx2 for the
 two-stage production-quality pipeline if higher fidelity is wanted later.
 The guidance kwargs below (guidance_scale=3.0, audio_guidance_scale=7.0,
@@ -28,11 +30,14 @@ def main():
     args = read_args()
 
     import torch
-    from diffusers import LTX2ImageToVideoPipeline
+    from diffusers import LTX2Pipeline, LTX2ImageToVideoPipeline
     from diffusers.utils import load_image, encode_video
 
-    print("[ltx2_worker] Loading LTX-2.3 ...", flush=True)
-    pipe = LTX2ImageToVideoPipeline.from_pretrained(args["repo"], torch_dtype=torch.bfloat16)
+    has_image = bool(args.get("image"))
+    pipeline_cls = LTX2ImageToVideoPipeline if has_image else LTX2Pipeline
+
+    print(f"[ltx2_worker] Loading LTX-2.3 ({pipeline_cls.__name__}) ...", flush=True)
+    pipe = pipeline_cls.from_pretrained(args["repo"], torch_dtype=torch.bfloat16)
     if torch.cuda.is_available():
         # The diffusers docs' own LTX-2.3 examples use sequential (submodule-
         # level) offload rather than the coarser enable_model_cpu_offload()
@@ -46,17 +51,16 @@ def main():
     if int(args.get("seed", -1)) >= 0:
         generator = torch.Generator(device="cuda").manual_seed(int(args["seed"]))
 
-    print("[ltx2_worker] Generating motion video (with audio) ...", flush=True)
+    print("[ltx2_worker] Generating video (with audio) ...", flush=True)
     frame_rate = float(args.get("fps", 24))
-    video, audio = pipe(
-        image=load_image(args["image"]),
+    call_kwargs = dict(
         prompt=args["prompt"],
         negative_prompt=args.get("negative_prompt") or None,
         width=int(args["width"]),
         height=int(args["height"]),
         num_frames=int(args["num_frames"]),
         frame_rate=frame_rate,
-        num_inference_steps=30,
+        num_inference_steps=int(args.get("steps") or 40),
         guidance_scale=3.0,
         stg_scale=1.0,
         modality_scale=3.0,
@@ -71,6 +75,10 @@ def main():
         output_type="np",
         return_dict=False,
     )
+    if has_image:
+        call_kwargs["image"] = load_image(args["image"])
+
+    video, audio = pipe(**call_kwargs)
 
     os.makedirs(os.path.dirname(args["out_path"]), exist_ok=True)
     encode_video(

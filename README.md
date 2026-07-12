@@ -8,9 +8,9 @@ models are cached) bundling six AI media tools:
    cloned voice) and the lips re-synced to match.
 2. **Text → Image** — photorealistic image generation from a prompt.
 3. **Face Swap** — source face onto a target **image or video**.
-4. **Text → Video** — prompt-only video generation, or supply a reference photo
-   for identity-preserving **motion video** (pick an engine) with an optional
-   audio track paired onto the output.
+4. **Text → Video** — prompt-only video generation with synchronized audio, or
+   supply a reference photo for identity-preserving **motion video** (pick an
+   engine) with an optional audio track paired onto the output.
 5. **Image Edit** — edit 1-3 images by instruction (e.g. "put the product from
    image 2 into image 1's scene").
 6. **Media Studio** — trim, convert, resize, denoise, caption, remove
@@ -26,7 +26,7 @@ models are cached) bundling six AI media tools:
 | Lip re-sync | LatentSync (primary) · Wav2Lip (fallback) |
 | Text → image | RealVisXL V5.0 (default) / SDXL base |
 | Face swap | InsightFace `inswapper_128` + GFPGAN (default) / CodeFormer |
-| Text → video (prompt only) | LTX-Video-0.9.7-distilled |
+| Text → video (prompt only, with audio) | LTX-2.3 |
 | Motion video (photo + prompt) | Wan2.2-I2V-A14B (default) / LTX-2.3 |
 | Image editing | Qwen-Image-Edit-2509 (1-3 reference images) |
 | Media utilities | ffmpeg · rembg (background removal) |
@@ -41,11 +41,12 @@ Open **`VAJRA_v1.1_Colab.ipynb`**, set the runtime to a GPU (A100 recommended),
 and run the cells top to bottom. The last cell prints a public `*.gradio.live`
 link to the studio.
 
-Cells **7b / 7c / 7d / 7e** build the optional, heavy venvs (LTX-Video,
-Wan2.2-I2V, Qwen-Image-Edit, LTX-2.3) — skip whichever tabs/engines you don't
-need. LTX-2.3 gets its own venv (7e), separate from LTX-Video's (7b): its
-pipeline needs a newer `transformers` (for its Gemma 3 text encoder) than
-LTX-Video's tokenizer will tolerate.
+Cells **7b / 7c / 7d** build the optional, heavy venvs (Wan2.2-I2V,
+Qwen-Image-Edit, LTX-2.3) — skip whichever tabs/engines you don't need.
+LTX-2.3 (cell 7d) powers all of Text → Video (prompt-only and, optionally,
+the reference-photo motion-video path) and needs its own venv: its pipeline
+needs a newer `transformers` (for its Gemma 3 text encoder) than any other
+venv here pins.
 
 To persist **model weights** across sessions, set `USE_DRIVE = True` in cell 2
 (covers everything fetched at setup *and* anything downloaded on first use of
@@ -58,18 +59,15 @@ can't execute a venv's python.
 app.py / app_theme.py     # Gradio UI (6 tabs, themed, share link)
 core/                     # config, device, model_manager, subprocess_runner
 engines/                  # one module per feature
-workers/                  # scripts run inside isolated venvs (voice, LTX, LTX-2.3, Wan2.2-I2V, Qwen-Image-Edit)
-setup/                    # install_main.sh · make_venvs.sh · make_ltx_venv.sh · make_ltx2_venv.sh · make_wan_venv.sh · make_qwen_venv.sh · download_models.py
+workers/                  # scripts run inside isolated venvs (voice, LTX-2.3, Wan2.2-I2V, Qwen-Image-Edit)
+setup/                    # install_main.sh · make_venvs.sh · make_ltx2_venv.sh · make_wan_venv.sh · make_qwen_venv.sh · download_models.py
 requirements/             # one pinned file per venv
 third_party/              # cloned at setup: Wav2Lip, LatentSync, CodeFormer
 ```
 
-**Why isolated venvs?** XTTS, LatentSync, LTX-Video, LTX-2.3, Wan2.2 and
-Qwen-Image-Edit each pin mutually incompatible `torch`/`transformers`/
-`diffusers` versions — LTX-Video and LTX-2.3 even conflict with *each other*
-(LTX-Video needs `transformers<4.50` to dodge a tokenizer regression;
-LTX-2.3 needs `>=4.50` for its Gemma 3 text encoder), so they get separate
-venvs too. Each runs in its own venv, invoked via `core/subprocess_runner.py`;
+**Why isolated venvs?** XTTS, LatentSync, LTX-2.3, Wan2.2 and Qwen-Image-Edit
+each pin mutually incompatible `torch`/`transformers`/`diffusers` versions,
+so each runs in its own venv, invoked via `core/subprocess_runner.py`;
 the main env
 keeps only Gradio + SDXL/diffusers + InsightFace + faster-whisper. A side
 benefit: subprocess engines release their VRAM on exit, so heavy models don't

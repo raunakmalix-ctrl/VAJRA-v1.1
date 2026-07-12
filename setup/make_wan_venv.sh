@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Build the isolated venv for Wan2.2-I2V (image + prompt -> motion video).
-# Separate from make_venvs.sh/make_ltx_venv.sh because Wan2.2's diffusers
-# integration needs transformers 4.49-4.51.3, which conflicts with venv_ltx's
-# <4.50 pin (too narrow an overlap to share safely -- see core/config.py's
-# WAN_I2V_REPO comment). Optional/heavy: run only if you want the Text->Video
+# Wan2.2's diffusers integration needs transformers 4.49-4.51.3, incompatible
+# with every other venv's pins (see core/config.py's WAN_I2V_REPO comment),
+# hence its own venv. Optional/heavy: run only if you want the Text->Video
 # tab's reference-image (motion video) mode.
 set -e
 
@@ -11,7 +10,7 @@ ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 VENVS="${IMAGE_TALK_VENVS:-$ROOT/venvs}"
 mkdir -p "$VENVS"
 
-# Wan2.2 wants CUDA > 12.7, matching venv_ltx's cu126 torch wheels.
+# Wan2.2 wants CUDA > 12.7, matching venv_qwen/venv_ltx2's cu126 torch wheels.
 CU="https://download.pytorch.org/whl/cu126"
 PY312="$(command -v python3.12 || command -v python3)"
 echo "==> building venv_wan with $PY312"
@@ -23,7 +22,7 @@ if [ ! -x "$VENVS/venv_wan/bin/python" ]; then
 fi
 
 # Install diffusers/transformers FIRST, torch trio LAST -- same ABI-mismatch
-# fix used for venv_ltx/venv_latentsync ("undefined symbol: torch_library_impl"
+# fix used for venv_ltx2/venv_latentsync ("undefined symbol: torch_library_impl"
 # when an unpinned dependency pulls a mismatched torchaudio).
 echo "==> diffusers (git) + deps"
 "$VENVS/venv_wan/bin/pip" install -q -r "$ROOT/requirements/wan.txt"

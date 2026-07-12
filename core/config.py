@@ -73,36 +73,34 @@ def _venv_python(name):
 
 VENV_VOICE_PY      = _venv_python("venv_voice")
 VENV_LATENTSYNC_PY = _venv_python("venv_latentsync")
-VENV_LTX_PY        = _venv_python("venv_ltx")
 VENV_LTX2_PY       = _venv_python("venv_ltx2")
 VENV_WAN_PY        = _venv_python("venv_wan")
 VENV_QWEN_PY       = _venv_python("venv_qwen")
 
-# LTX-Video 0.9.7-distilled (Lightricks) text -> video. Open (no token), fast
-# few-step. Runs in its own venv (built by setup/make_ltx_venv.sh).
-LTX_REPO = "Lightricks/LTX-Video-0.9.7-distilled"
-
-# LTX-2.3 (Lightricks) image+prompt -> motion video WITH synchronized audio
-# (a single DiT-based audio-video model). Alternative engine to Wan2.2-I2V for
-# the Text -> Video tab's reference-photo path: faster/lighter, generates
-# audio too, trades some multi-subject identity fidelity per early
-# comparisons. Confirmed diffusers-compatible checkpoint (LTX2ImageToVideoPipeline)
-# per https://huggingface.co/docs/diffusers/main/en/api/pipelines/ltx2 --
-# runs in its OWN venv (built by setup/make_ltx2_venv.sh), NOT shared with
-# venv_ltx: LTX-2.3's pipeline unconditionally imports
-# Gemma3ForConditionalGeneration (its default text encoder) at module load
-# time, which needs transformers>=~4.50 -- but venv_ltx pins transformers
-# <4.50 specifically to dodge a different tokenizer regression that breaks
-# LTX-0.9.7-distilled (see requirements/ltx.txt). Confirmed via a real
-# ImportError in Colab, not assumed.
+# LTX-2.3 (Lightricks) text -> video, or image+prompt -> motion video, WITH
+# synchronized audio (a single DiT-based audio-video model; diffusers exposes
+# separate pipeline classes -- LTX2Pipeline vs LTX2ImageToVideoPipeline -- for
+# the two modes, selected by workers/ltx2_worker.py based on whether a
+# reference image is given). Covers the Text -> Video tab's prompt-only path
+# (previously LTX-Video-0.9.7-distilled, removed) as well as being an
+# alternative to Wan2.2-I2V for the reference-photo path: faster/lighter,
+# generates audio too, trades some multi-subject identity fidelity per early
+# comparisons. Confirmed diffusers-compatible checkpoint per
+# https://huggingface.co/docs/diffusers/main/en/api/pipelines/ltx2 -- runs in
+# its own venv (built by setup/make_ltx2_venv.sh): its pipeline
+# unconditionally imports Gemma3ForConditionalGeneration (its default text
+# encoder) at module load time, needing transformers>=~4.50 (confirmed via a
+# real ImportError in Colab when this was still sharing a venv with the now-
+# removed LTX-Video-0.9.7-distilled, which needed transformers<4.50).
 LTX2_REPO = "diffusers/LTX-2.3-Diffusers"
 
 # Wan2.2-I2V (Alibaba/Tongyi Wanxiang) image+prompt -> motion video, identity
 # preserving, handles multi-subject images (not per-face like classic
 # talking-head methods -- the uploaded photo is the first frame, diffusion
 # generates the rest following the prompt). Apache-2.0, open. Runs in its own
-# venv (built by setup/make_wan_venv.sh) -- needs transformers 4.49-4.51.3, incompatible with
-# venv_ltx's <4.50 pin (see requirements/ltx.txt), hence a separate venv.
+# venv (built by setup/make_wan_venv.sh) -- needs transformers 4.49-4.51.3,
+# incompatible with venv_qwen/venv_ltx2's git-installed transformers and with
+# every other venv's pins, hence a separate venv.
 WAN_I2V_REPO = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
 
 # Qwen-Image-Edit-2509 ("Plus") — instruction-based image editing, replaces

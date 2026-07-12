@@ -2,13 +2,12 @@
 # Python 3.12. torch ~2.7 (cu126) is installed separately by
 # setup/make_ltx2_venv.sh.
 #
-# Separate from venv_ltx (LTX-0.9.7-distilled): LTX-2.3's pipeline
-# unconditionally imports Gemma3ForConditionalGeneration (its default text
-# encoder) at module load time. That needs transformers>=~4.50, but
-# venv_ltx pins transformers<4.50 specifically to dodge a DIFFERENT
-# tokenizer regression that breaks LTX-0.9.7-distilled (see
-# requirements/ltx.txt). Confirmed via a real ImportError in Colab -- not
-# assumed. Install transformers from git here too, same reasoning as
+# LTX-2.3's pipeline unconditionally imports Gemma3ForConditionalGeneration
+# (its default text encoder) at module load time, needing transformers>=~4.50
+# -- confirmed via a real ImportError in Colab when this briefly shared a
+# venv with the now-removed LTX-Video-0.9.7-distilled (which needed
+# transformers<4.50 for an unrelated tokenizer regression), not assumed.
+# Install transformers from git here too, same reasoning as
 # requirements/qwen.txt: guarantees current model support rather than
 # guessing a version boundary.
 diffusers @ git+https://github.com/huggingface/diffusers.git

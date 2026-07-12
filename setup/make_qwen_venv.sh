@@ -11,7 +11,7 @@ ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 VENVS="${IMAGE_TALK_VENVS:-$ROOT/venvs}"
 mkdir -p "$VENVS"
 
-# Matches venv_ltx/venv_wan's CUDA 12.6 torch wheels.
+# Matches venv_wan/venv_ltx2's CUDA 12.6 torch wheels.
 CU="https://download.pytorch.org/whl/cu126"
 PY312="$(command -v python3.12 || command -v python3)"
 echo "==> building venv_qwen with $PY312"
@@ -23,7 +23,7 @@ if [ ! -x "$VENVS/venv_qwen/bin/python" ]; then
 fi
 
 # Install diffusers/transformers FIRST, torch trio LAST -- same ABI-mismatch
-# fix used for venv_ltx/venv_wan ("undefined symbol: torch_library_impl" when
+# fix used for venv_wan/venv_ltx2 ("undefined symbol: torch_library_impl" when
 # an unpinned dependency pulls a mismatched torchaudio).
 echo "==> diffusers (git) + transformers (git) + deps"
 "$VENVS/venv_qwen/bin/pip" install -q -r "$ROOT/requirements/qwen.txt"

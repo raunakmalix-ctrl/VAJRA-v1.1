@@ -1,13 +1,10 @@
 # venv_wan — Wan2.2-I2V motion video (Alibaba/Tongyi Wanxiang). Python 3.12.
 # torch ~2.7 (cu126) is installed separately by setup/make_wan_venv.sh.
-# WanImageToVideoPipeline is recent, so pull diffusers from git main (same
-# reasoning as requirements/ltx.txt).
+# WanImageToVideoPipeline is recent, so pull diffusers from git main.
 diffusers @ git+https://github.com/huggingface/diffusers.git
-# Wan2.2's diffusers integration needs transformers 4.49-4.51.3. venv_ltx
-# pins transformers<4.50 (see requirements/ltx.txt) to dodge a tokenizer
-# regression -- the overlap between the two ranges is too narrow to share a
-# venv, which is why Wan gets its own (see core/config.py's WAN_I2V_REPO
-# comment).
+# Wan2.2's diffusers integration needs transformers 4.49-4.51.3, incompatible
+# with every other venv's pins (see core/config.py's WAN_I2V_REPO comment),
+# hence its own venv.
 transformers>=4.49,<=4.51.3
 accelerate
 safetensors
