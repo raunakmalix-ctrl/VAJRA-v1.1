@@ -47,14 +47,15 @@ ltx         = ENGINES["ltx"]
 ltx2        = ENGINES["ltx2"]
 media       = ENGINES["media"]
 motion      = ENGINES["motion"]
+qwen_edit   = ENGINES["qwen_edit"]
 
 
 # ── GPU helpers ─────────────────────────────────────────────────────────────
 # Gradio's queue processes multiple tab requests concurrently (max_size=4), but
 # they all share one physical GPU. Without this, e.g. a Text->Image generation
 # and an Image Edit click a few seconds apart can both be mid-load at once and
-# collectively exceed VRAM (observed: FLUX.1-Kontext-dev OOM while SDXL was
-# still resident from a concurrent request). Serialize all GPU-heavy tabs.
+# collectively exceed VRAM (observed: a heavy image-edit model OOM while SDXL
+# was still resident from a concurrent request). Serialize all GPU-heavy tabs.
 GPU_LOCK = threading.Lock()
 
 
@@ -160,9 +161,7 @@ def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed)
     try:
         free_inprocess()
         v = {"SDXL Realistic (best, open)": "sdxl_real",
-             "SDXL base (open)": "sdxl",
-             "FLUX Schnell (token)": "schnell",
-             "FLUX Dev (token)": "dev"}.get(variant, "sdxl_real")
+             "SDXL base (open)": "sdxl"}.get(variant, "sdxl_real")
         out = diffusion.run(prompt=prompt, variant=v, negative_prompt=negative,
                             width=int(width), height=int(height),
                             steps=int(steps), guidance=float(guidance),
@@ -174,17 +173,19 @@ def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed)
         GPU_LOCK.release()
 
 
-# ── Image Edit (FLUX.1-Kontext-dev) ─────────────────────────────────────────
-def run_edit(image, prompt, steps, guidance, seed):
-    if image is None:
-        return None, warn("Upload an image to edit")
+# ── Image Edit (Qwen-Image-Edit-2509) ────────────────────────────────────────
+def run_edit(images, prompt, negative, steps, guidance, seed):
+    imgs = [f.name if hasattr(f, "name") else f for f in (images or [])]
+    if not imgs:
+        return None, warn("Upload 1-3 images to edit")
     if not prompt or not prompt.strip():
         return None, warn("Describe the edit")
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        out = diffusion.edit(image_path=image, prompt=prompt,
-                             steps=int(steps), guidance=float(guidance), seed=int(seed))
+        out = qwen_edit.run(image_paths=imgs, prompt=prompt,
+                            negative_prompt=negative,
+                            steps=int(steps), guidance=float(guidance), seed=int(seed))
         return out, ok(os.path.basename(out))
     except Exception as e:
         return None, err(str(e))
@@ -373,17 +374,16 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
         # ── 02 Text → Image ─────────────────────────────────────────────────
         with gr.Tab("02 · Text → Image", id=1):
             gr.HTML(hero("ti-photo", "Text → Image",
-                "Generate photoreal images from a prompt (SDXL / FLUX)."))
+                "Generate photoreal images from a prompt (SDXL)."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Prompt</div>")
                     ti_prompt = gr.Textbox(label="Prompt", lines=4,
                         placeholder="A cinematic portrait, golden hour, ultra-detailed…")
                     ti_variant = gr.Radio(
-                        ["SDXL Realistic (best, open)", "SDXL base (open)",
-                         "FLUX Schnell (token)", "FLUX Dev (token)"],
+                        ["SDXL Realistic (best, open)", "SDXL base (open)"],
                         value="SDXL Realistic (best, open)",
-                        label="Model  (FLUX needs HF_TOKEN + license)")
+                        label="Model")
                     ti_neg = gr.Textbox(label="Negative prompt (SDXL only)", lines=2,
                         placeholder="leave blank for the built-in quality default")
                     with gr.Row():
@@ -487,29 +487,35 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                           lx_frames, lx_steps, lx_guid, lx_engine, lx_audio],
                          [lx_out, lx_status])
 
-        # ── 05 Image Edit (FLUX.1-Kontext-dev) ───────────────────────────────
+        # ── 05 Image Edit (Qwen-Image-Edit-2509) ─────────────────────────────
         with gr.Tab("05 · Image Edit", id=4):
             gr.HTML(hero("ti-wand", "Image Edit",
-                "Edit an image by instruction — change background, style, add objects."))
+                "Edit image(s) by instruction — change background, style, add "
+                "objects, or combine multiple references (e.g. person + product)."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Instruction editing "
-                            "(FLUX-Kontext · needs HF_TOKEN + license + venv_ltx / cell 7b)</div>")
-                    ie_img = gr.Image(label="Image to edit", type="filepath",
-                                      elem_classes=["output-media"])
+                            "(Qwen-Image-Edit-2509 · open, no token · needs the "
+                            "optional venv_qwen)</div>")
+                    ie_img = gr.Files(label="Image(s) to edit — 1-3 references "
+                        "(e.g. person + product, person + scene)",
+                        file_count="multiple")
                     ie_prompt = gr.Textbox(label="Edit instruction", lines=3,
                         placeholder="e.g. change the background to a sunset beach; "
-                                    "make it black-and-white; add sunglasses")
+                                    "make it black-and-white; add sunglasses; "
+                                    "put the product from image 2 into image 1's scene")
+                    ie_neg = gr.Textbox(label="Negative prompt (optional)", lines=1,
+                        placeholder="leave blank for none")
                     with gr.Row():
-                        ie_steps = gr.Slider(10, 40, value=28, step=1, label="Steps")
-                        ie_guid  = gr.Slider(1.0, 5.0, value=2.5, step=0.5, label="Guidance")
+                        ie_steps = gr.Slider(10, 50, value=40, step=1, label="Steps")
+                        ie_guid  = gr.Slider(1.0, 8.0, value=4.0, step=0.5, label="Guidance")
                     ie_seed = gr.Number(label="Seed (−1 = random)", value=-1, precision=0)
                     ie_btn  = gr.Button("▶  Apply Edit", variant="primary")
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Output</div>")
                     ie_out = gr.Image(label="", elem_classes=["output-media"])
                     ie_status = gr.HTML(AWAIT)
-            ie_btn.click(run_edit, [ie_img, ie_prompt, ie_steps, ie_guid, ie_seed],
+            ie_btn.click(run_edit, [ie_img, ie_prompt, ie_neg, ie_steps, ie_guid, ie_seed],
                          [ie_out, ie_status])
 
         # ── 06 Media Studio (ffmpeg/CPU — no GPU cost) ───────────────────────

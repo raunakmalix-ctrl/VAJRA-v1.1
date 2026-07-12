@@ -1,7 +1,7 @@
 """
 Voice cloning + multilingual TTS (English / Hindi) with XTTS-v2.
 
-XTTS pins old transformers/torch that clash with the main FLUX env, so it runs
+XTTS pins old transformers/torch that clash with the main SDXL env, so it runs
 inside `venv_voice` via a worker subprocess. This orchestrator just marshals
 arguments and returns the generated .wav path.
 """

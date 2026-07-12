@@ -1,10 +1,10 @@
 """
 Run an engine worker inside its own isolated venv via subprocess.
 
-Why: XTTS (Coqui), SadTalker and LatentSync pin mutually incompatible
-torch/transformers/numpy versions that also clash with the main env's
-FLUX/diffusers stack. Each runs in a dedicated venv; we shell out to that
-venv's python on a small worker script and read back the output path.
+Why: XTTS, LatentSync, LTX, Wan2.2 and Qwen-Image-Edit each pin mutually
+incompatible torch/transformers/numpy versions that also clash with the main
+env's SDXL/diffusers stack. Each runs in a dedicated venv; we shell out to
+that venv's python on a small worker script and read back the output path.
 
 Protocol:
   - args are JSON-serialized to a temp file, passed as a single argv.

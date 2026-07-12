@@ -25,8 +25,8 @@ HF_CACHE_DIR = os.path.join(MODEL_ROOT, "hf_cache")
 for _d in (MODEL_ROOT, OUTPUTS_DIR, UPLOADS_DIR, THIRD_PARTY, VENV_ROOT, HF_CACHE_DIR):
     os.makedirs(_d, exist_ok=True)
 
-# Every from_pretrained()/snapshot_download() call in this project (SDXL/FLUX
-# here in the main process, LTX/Kontext/Wan2.2 in their subprocess workers)
+# Every from_pretrained()/snapshot_download() call in this project (SDXL
+# here in the main process, LTX/Qwen-Edit/Wan2.2 in their subprocess workers)
 # otherwise falls back to Hugging Face's default cache
 # (~/.cache/huggingface/hub) -- local to the Colab VM disk, wiped every
 # session, and NOT covered by the MODEL_ROOT Drive redirect above despite
@@ -45,12 +45,6 @@ LATENTSYNC_DIR = os.path.join(THIRD_PARTY, "LatentSync")
 CODEFORMER_DIR = os.path.join(THIRD_PARTY, "CodeFormer")
 
 # ── Model weight paths ──────────────────────────────────────────────────────
-# Text → image
-FLUX_DEV_REPO     = "black-forest-labs/FLUX.1-dev"
-FLUX_SCHNELL_REPO = "black-forest-labs/FLUX.1-schnell"
-# Instruction-based image editing (gated, needs HF_TOKEN + license)
-FLUX_KONTEXT_REPO = "black-forest-labs/FLUX.1-Kontext-dev"
-
 # Face swap
 INSIGHTFACE_ROOT = os.path.join(MODEL_ROOT, "insightface")
 INSWAPPER_PATH   = os.path.join(INSIGHTFACE_ROOT, "models", "inswapper_128.onnx")
@@ -81,6 +75,7 @@ VENV_VOICE_PY      = _venv_python("venv_voice")
 VENV_LATENTSYNC_PY = _venv_python("venv_latentsync")
 VENV_LTX_PY        = _venv_python("venv_ltx")
 VENV_WAN_PY        = _venv_python("venv_wan")
+VENV_QWEN_PY       = _venv_python("venv_qwen")
 
 # LTX-Video 0.9.7-distilled (Lightricks) text -> video. Open (no token), fast
 # few-step. Runs in its own venv (built by setup/make_ltx_venv.sh).
@@ -103,6 +98,17 @@ LTX2_REPO = "diffusers/LTX-2.3-Diffusers"
 # venv (built by setup/make_wan_venv.sh) -- needs transformers 4.49-4.51.3, incompatible with
 # venv_ltx's <4.50 pin (see requirements/ltx.txt), hence a separate venv.
 WAN_I2V_REPO = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+
+# Qwen-Image-Edit-2509 ("Plus") — instruction-based image editing, replaces
+# FLUX.1-Kontext-dev for the Image Edit tab. Apache-2.0, fully open (no
+# token/license click-through, unlike Kontext), and supports 1-3 reference
+# images per edit (e.g. "person + product") -- Kontext only took one.
+# Confirmed official diffusers support (QwenImageEditPlusPipeline). Its
+# Qwen2.5-VL-7B-Instruct text encoder needs transformers>=4.49, and the
+# maintainers recommend installing transformers from git to guarantee the
+# qwen2_5_vl model type is registered -- runs in its own venv (built by
+# setup/make_qwen_venv.sh).
+QWEN_EDIT_REPO = "Qwen/Qwen-Image-Edit-2509"
 
 # ── FFmpeg (Colab: apt-installed, on PATH) ──────────────────────────────────
 FFMPEG_PATH  = shutil.which("ffmpeg") or "ffmpeg"

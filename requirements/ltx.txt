@@ -10,7 +10,7 @@ transformers>=4.46,<4.50
 accelerate
 safetensors
 sentencepiece
-tiktoken   # Kontext's CLIP/T5 tokenizer configs on some snapshots need this
+tiktoken   # some LTX tokenizer snapshots' CLIP/T5 configs need this
 imageio
 imageio-ffmpeg
 av

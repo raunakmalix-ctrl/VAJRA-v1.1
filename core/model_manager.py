@@ -1,8 +1,9 @@
 """
 In-process model cache with single-occupant semantics: loading a new model
 unloads the previous one so only one heavy model sits on the GPU at a time.
-Used by the in-process engines (FLUX diffusion, face swap). The subprocess
-engines (XTTS, SadTalker, LatentSync) free their VRAM automatically on exit.
+Used by the in-process engines (SDXL diffusion, face swap). The subprocess
+engines (XTTS, LatentSync, LTX, Wan2.2, Qwen-Image-Edit) free their VRAM
+automatically on exit.
 """
 import gc
 import torch

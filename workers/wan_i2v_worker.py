@@ -37,10 +37,10 @@ def main():
     print("[wan_i2v_worker] Loading Wan2.2-I2V-A14B ...", flush=True)
     pipe = WanImageToVideoPipeline.from_pretrained(args["repo"], torch_dtype=torch.bfloat16)
     # Wan2.2's MoE architecture (~27B total, two ~14B experts) needs ~80GB
-    # resident in bf16 -- infeasible on a 40GB A100. Always offload, the same
-    # unconditional pattern used for FLUX.1-Kontext-dev in kontext_worker.py
-    # (that model is ~33GB alone with no headroom; Wan2.2 is materially
-    # bigger, so there is no "big enough GPU, skip offload" fast path here).
+    # resident in bf16 -- infeasible on a 40GB A100. Always offload
+    # unconditionally, the same pattern used by every other large model in
+    # this project without a confirmed "fits fully unoffloaded" number --
+    # there is no "big enough GPU, skip offload" fast path here.
     if torch.cuda.is_available():
         pipe.enable_model_cpu_offload()
         try:

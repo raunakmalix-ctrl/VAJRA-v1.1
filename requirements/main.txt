@@ -1,4 +1,4 @@
-# Main Colab env — Gradio + FLUX + face swap + WhisperX.
+# Main Colab env — Gradio + SDXL + face swap + faster-whisper.
 # torch / torchvision / torchaudio are preinstalled by Colab; do NOT pin them
 # here or you risk breaking CUDA. Everything below layers on top.
 
@@ -10,7 +10,7 @@ gradio-client==1.3.0
 fastapi==0.112.2
 starlette<0.39
 
-# FLUX.1 (text -> image). Pinned as ONE mutually consistent set with
+# SDXL (text -> image). Pinned as ONE mutually consistent set with
 # huggingface_hub 0.25.2 below — Colab's newer transformers/diffusers expect
 # huggingface_hub>=1.5 (is_offline_mode), which conflicts with gradio 4.x.
 diffusers==0.31.0
@@ -25,7 +25,7 @@ protobuf
 insightface==0.7.3
 # Pinned: newer onnxruntime-gpu releases require CUDA 13 (libcudart.so.13),
 # which Colab's runtime doesn't ship — causes "libcudart.so.13: cannot open
-# shared object file" on import (breaks face swap AND SDXL/FLUX loading via
+# shared object file" on import (breaks face swap AND SDXL loading via
 # diffusers' onnx_utils probe). 1.19.2 targets CUDA 12, matching Colab.
 onnxruntime-gpu==1.19.2
 opencv-python-headless

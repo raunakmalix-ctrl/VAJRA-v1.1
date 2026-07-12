@@ -3,10 +3,12 @@ Download model weights. Best-effort and idempotent: each model is independent,
 so one failure won't abort the rest. Re-run safely.
 
 Notes:
-  - FLUX.1-dev is GATED. Accept the license at
-    https://huggingface.co/black-forest-labs/FLUX.1-dev and set HF_TOKEN
-    (or run `huggingface-cli login`) before launching. FLUX.1-schnell is open.
   - InsightFace 'buffalo_l' detector downloads itself on first face-swap run.
+  - Wan2.2-I2V, LTX-2.3 and Qwen-Image-Edit-2509 (the optional heavy venvs)
+    are NOT fetched here -- each downloads its own weights on first use, via
+    their respective worker subprocess. Qwen-Image-Edit-2509 is confirmed
+    open (no token); Wan2.2-I2V/LTX-2.3's gating status wasn't confirmed at
+    integration time -- if either fails to load, check its HF model page.
 """
 import os
 import sys
@@ -119,9 +121,10 @@ def main():
     step("LatentSync 1.5 (lip re-sync)", latentsync)
     print("\nAll downloads attempted. MODEL_ROOT =", MODEL_ROOT)
     if not HF_TOKEN:
-        print("NOTE: HF_TOKEN not set — FLUX.1-dev (gated) will fail to load. "
-              "Either set HF_TOKEN after accepting its license, or use "
-              "FLUX.1-schnell (open) in the Text -> Image tab.")
+        print("NOTE: HF_TOKEN not set. The defaults (SDXL Realistic, Qwen-Image-Edit) "
+              "need no token. If Wan2.2-I2V or LTX 2.3 (Text -> Video's photo-"
+              "animation engines) fail to load, check whether their HF repos "
+              "require accepting a license.")
 
 
 if __name__ == "__main__":

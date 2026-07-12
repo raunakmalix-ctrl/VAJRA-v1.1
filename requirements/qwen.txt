@@ -1,0 +1,13 @@
+# venv_qwen — Qwen-Image-Edit-2509 instruction-based image editing. Python 3.12.
+# torch ~2.7 (cu126) is installed separately by setup/make_qwen_venv.sh.
+# QwenImageEditPlusPipeline is recent, so pull diffusers from git main (same
+# reasoning as requirements/ltx.txt / requirements/wan.txt).
+diffusers @ git+https://github.com/huggingface/diffusers.git
+# Qwen2.5-VL-7B-Instruct (this model's text encoder) needs transformers>=4.49;
+# the maintainers explicitly recommend installing from git to guarantee the
+# qwen2_5_vl model type is registered ("KeyError: 'qwen2_5_vl'" otherwise).
+transformers @ git+https://github.com/huggingface/transformers.git
+accelerate
+safetensors
+sentencepiece
+setuptools<81   # Python 3.12 venvs omit setuptools; some deps still need pkg_resources

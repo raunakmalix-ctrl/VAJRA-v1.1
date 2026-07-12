@@ -4,7 +4,7 @@
 # These hold legacy torch/transformers stacks that DON'T have Python 3.12 wheels,
 # while Colab now runs Python 3.12. So we install Python 3.10 via apt and build
 # the venvs from it with `virtualenv` (which bundles pip and avoids Colab's
-# broken `python -m venv` ensurepip step). The main FLUX env stays on 3.12.
+# broken `python -m venv` ensurepip step). The main SDXL env stays on 3.12.
 set -e
 
 ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
