@@ -221,24 +221,50 @@ def run_faceswap(source, mode, target_img, target_vid, enhancer,
 
 
 # ── Feature: Text → Video (LTX-2.3 text-only, or a motion-video engine w/ a photo)
-def run_ltx(image, prompt, negative, width, height, num_frames, steps, guidance,
+# Resolution presets (label -> (width, height)) instead of raw width/height
+# sliders -- all multiples of 32 (the step every engine here already tiles
+# on), roughly matching the standard 480p/576p/720p buckets at 16:9.
+RESOLUTIONS = {
+    "360p (640×384)":  (640, 384),
+    "480p (832×480)":  (832, 480),
+    "576p (1024×576)": (1024, 576),
+    "720p (1280×704)": (1280, 704),
+}
+
+
+def _snap_frames(duration_s, fps):
+    """duration(s) x fps -> a frame count of the 8n+1 form every engine here
+    needs (its temporal VAE downsamples by 8x). This is also how "higher fps
+    = more compute/time" becomes literally true: for a fixed duration, more
+    fps means more frames to denoise, not just a faster-playing encode.
+    Capped at 193 -- the highest frame count exercised in this app's tested
+    slider range -- so maxing out both duration and fps at once can't push
+    generation time/VRAM past what's already been validated."""
+    n = max(9, int(round(duration_s * fps)))
+    n = ((n - 1) // 8) * 8 + 1
+    return min(n, 193)
+
+
+def run_ltx(image, prompt, negative, resolution, duration, fps, steps, guidance,
             motion_engine, ref_audio):
     if not prompt or not prompt.strip():
         return None, warn("Prompt required")
+    width, height = RESOLUTIONS.get(resolution, (832, 480))
+    num_frames = _snap_frames(float(duration), float(fps))
     GPU_LOCK.acquire()
     try:
         free_inprocess()
         if image and not motion_engine.startswith("LTX 2.3"):
             out = motion.run(image_path=image, prompt=prompt,
                              negative_prompt=negative,
-                             width=int(width), height=int(height),
-                             num_frames=int(num_frames),
+                             width=width, height=height,
+                             num_frames=num_frames, fps=int(fps),
                              guidance=float(guidance))
         else:
             out = ltx2.run(prompt=prompt, image_path=image or None,
                            negative_prompt=negative,
-                           width=int(width), height=int(height),
-                           num_frames=int(num_frames), steps=int(steps))
+                           width=width, height=height,
+                           num_frames=num_frames, steps=int(steps), fps=int(fps))
         if ref_audio:
             # Pairing, not conditioning: replaces whatever audio the engine
             # generated (or adds one to Wan2.2-I2V's silent output). The
@@ -440,8 +466,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     gr.HTML("<div class='section-label'>LTX-2.3 (open · needs the "
                             "optional venv_ltx2) generates prompt-only video with "
                             "its own audio. With a photo, pick a motion engine below "
-                            "(Wan2.2-I2V needs the optional venv_wan). Width/height/"
-                            "frames are shared across all modes.</div>")
+                            "(Wan2.2-I2V needs the optional venv_wan). Resolution/"
+                            "duration/fps are shared across all modes.</div>")
                     lx_img = gr.Image(label="Reference photo (optional) — animate "
                         "this instead of generating from scratch", type="filepath",
                         elem_classes=["output-media"])
@@ -459,12 +485,15 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                     "sunrise… or, with a photo: make them dance in joy")
                     lx_neg = gr.Textbox(label="Negative prompt", lines=1,
                         value="shaky, glitchy, low quality, watermark")
+                    lx_res = gr.Dropdown(list(RESOLUTIONS.keys()),
+                        value="480p (832×480)", label="Resolution")
                     with gr.Row():
-                        lx_w = gr.Slider(384, 1280, value=704, step=32, label="Width")
-                        lx_h = gr.Slider(384, 1280, value=512, step=32, label="Height")
+                        lx_duration = gr.Slider(1, 4, value=3, step=1,
+                                                label="Duration (seconds)")
+                        lx_fps = gr.Slider(25, 60, value=25, step=1,
+                            label="Frame rate (FPS) — higher = more frames for the "
+                                  "same duration, so more compute & time")
                     with gr.Row():
-                        lx_frames = gr.Slider(49, 193, value=121, step=8,
-                                              label="Frames (~fps·sec)")
                         lx_steps  = gr.Slider(10, 50, value=40, step=1,
                                               label="Steps (LTX 2.3)")
                         lx_guid   = gr.Slider(1.0, 5.0, value=1.0, step=0.5,
@@ -475,8 +504,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     lx_out = gr.Video(label="", elem_classes=["output-media"])
                     lx_status = gr.HTML(AWAIT)
             lx_btn.click(run_ltx,
-                         [lx_img, lx_prompt, lx_neg, lx_w, lx_h,
-                          lx_frames, lx_steps, lx_guid, lx_engine, lx_audio],
+                         [lx_img, lx_prompt, lx_neg, lx_res, lx_duration,
+                          lx_fps, lx_steps, lx_guid, lx_engine, lx_audio],
                          [lx_out, lx_status])
 
         # ── 05 Image Edit (Qwen-Image-Edit-2509) ─────────────────────────────

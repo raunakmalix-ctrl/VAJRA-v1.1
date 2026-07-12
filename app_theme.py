@@ -157,12 +157,15 @@ body,.gradio-container{
 .tab-nav{background:var(--navy-deep)!important; border:none!important;
   border-bottom:3px solid var(--amber)!important; padding:0 16px!important;
   display:flex!important; flex-wrap:wrap!important; gap:2px!important;}
+/* Unselected tabs sit on a permanently dark (navy-deep) bar in BOTH themes,
+   so their text/icon color is a fixed gold rather than a theme variable --
+   it needs to read against the same dark background either way. */
 .tab-nav button{font-family:'Rajdhani',sans-serif!important; font-weight:600!important;
   font-size:.82rem!important; letter-spacing:.09em!important; text-transform:uppercase!important;
-  color:#a7b8cc!important; background:transparent!important; border:none!important;
+  color:var(--amber-deep)!important; background:transparent!important; border:none!important;
   border-bottom:3px solid transparent!important; margin-bottom:-3px!important;
   padding:13px 17px!important; transition:var(--transition)!important;}
-.tab-nav button:hover{color:#fff!important; background:rgba(255,255,255,.06)!important;}
+.tab-nav button:hover{color:var(--amber)!important; background:rgba(255,255,255,.06)!important;}
 .tab-nav button.selected{color:var(--navy-deep)!important; background:var(--amber)!important;
   border-bottom-color:var(--amber)!important; font-weight:700!important;}
 
@@ -219,6 +222,15 @@ textarea:focus,input:focus,select:focus{
   box-shadow:0 0 0 3px var(--amber-soft)!important; outline:none!important;}
 input[type=range]{accent-color:var(--amber)!important; height:4px!important;}
 input[type=checkbox],input[type=radio]{accent-color:var(--amber)!important; width:16px; height:16px;}
+
+/* Radio/checkbox CHOICE text (e.g. "Wan2.2-I2V (best identity/multi-subject)")
+   is interactive selection, not a secondary field caption -- it needs full
+   contrast, unlike a field's own muted caption label. :has() targets any
+   <label> wrapping a radio/checkbox input regardless of Gradio's internal
+   wrapper class names, which differ across versions -- this was rendering
+   as --muted (barely readable grey) in dark mode before this rule. */
+label:has(input[type=radio]),label:has(input[type=checkbox]){
+  color:var(--ink)!important;}
 
 /* ── Buttons ──────────────────────────────────────────────────────────── */
 .gr-button{font-family:'Rajdhani',sans-serif!important; font-weight:700!important;
@@ -311,7 +323,7 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
 .tab-hero .th-txt{display:flex; flex-direction:column; gap:1px;}
 .tab-hero .th-title{font-family:'Oswald',sans-serif; font-weight:600;
   font-size:1.12rem; letter-spacing:.04em; color:var(--navy); text-transform:uppercase;}
-:root[data-theme="dark"] .tab-hero .th-title{color:var(--ink);}
+:root[data-theme="dark"] .tab-hero .th-title{color:var(--amber);}
 .tab-hero .th-sub{font-family:'Inter',sans-serif; font-size:.86rem; color:var(--muted);}
 
 /* ── Empty-state for output media ─────────────────────────────────────── */
