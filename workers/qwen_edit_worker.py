@@ -16,11 +16,12 @@ os.environ["MPLBACKEND"] = "Agg"
 os.environ["HF_HUB_DISABLE_XET"] = "1"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.subprocess_runner import read_args, emit_result   # noqa: E402
+from core.subprocess_runner import read_args, emit_result, warn_low_disk  # noqa: E402
 
 
 def main():
     args = read_args()
+    warn_low_disk(45, "Qwen-Image-Edit-2509 (20B transformer + 7B text encoder)")
 
     import torch
     from diffusers import QwenImageEditPlusPipeline
