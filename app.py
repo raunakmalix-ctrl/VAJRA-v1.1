@@ -91,25 +91,101 @@ def ribbon_html():
     )
 
 
-def wave_html(bars=72):
-    """Ambient waveform strip under the header.
+def _trace_path(width, height, period, amp, phase=0.0, step=4,
+                bursts=None, burst_period=None, burst_amp=0.0):
+    """SVG path for one scrolling trace.
 
-    Bars are emitted with staggered delays and durations so the motion reads as
-    a signal rather than a metronome; the rest is CSS. Deliberately decorative:
-    it is NOT wired to any audio, because a bar that looked like a live level
-    meter while showing nothing of the sort would be worse than an obvious
-    ornament.
+    A plain carrier when `bursts` is None. Otherwise the carrier is overlaid
+    with short high-frequency packets inside the given windows -- a quiet line
+    interrupted by transmissions reads as intercepted traffic, where a
+    continuous wave just reads as decoration.
+
+    `width` is twice the visible span and every period divides that span, so
+    scrolling by half the width returns to an identical phase and the loop has
+    no seam.
     """
     import math
-    out = []
-    for i in range(bars):
-        # Two offset sine waves, so neighbouring bars differ without the whole
-        # row marching in step.
-        delay = (math.sin(i * 0.55) + math.sin(i * 0.17) + 2.0) * 0.28
-        dur = 1.15 + 0.5 * abs(math.sin(i * 0.31))
-        out.append(f"<span class='vw-bar' style='animation-delay:{delay:.2f}s;"
-                   f"animation-duration:{dur:.2f}s'></span>")
-    return f"<div class='vj-wave' aria-hidden='true'>{''.join(out)}</div>"
+    mid = height / 2.0
+    pts = []
+    x = 0
+    while x <= width:
+        y = mid + amp * math.sin(2.0 * math.pi * x / period + phase)
+        if bursts:
+            # Raised-cosine envelope, so packets fade in and out instead of
+            # switching on at full amplitude with a click-like edge.
+            span = width / 2.0
+            u = (x % span) / span
+            for c, w in bursts:
+                d = abs(u - c)
+                if d < w:
+                    env = 0.5 * (1.0 + math.cos(math.pi * d / w))
+                    y += (burst_amp * env
+                          * math.sin(2.0 * math.pi * x / burst_period))
+        pts.append(f"{x},{y:.1f}")
+        x += step
+    return "M" + " L".join(pts)
+
+
+# One visible span; traces are drawn at 2x and scrolled by half.
+_WAVE_SPAN = 1200
+_WAVE_H = 100
+
+# Kept low and dense on purpose. Tall slow sines read as ocean swell; a shallow
+# carrier carrying short packets reads as signal traffic, which is the point.
+_WAVE_LAYERS = [
+    # period, amp, phase, stroke, opacity, seconds, bursts, burst period/amp
+    # Few packets with real gaps between them: transmissions you can pick out
+    # individually read as traffic, whereas wall-to-wall oscillation is just
+    # texture. The quiet stretches are doing as much work as the bursts.
+    # Every period below divides _WAVE_SPAN exactly. That is not cosmetic: the
+    # loop scrolls by half the drawn width, so a period that does not divide the
+    # span puts the trace at a different phase on rejoin and the strip visibly
+    # jumps once per cycle. test_app_ui.py enforces it.
+    dict(period=150.0, amp=3.4, phase=0.0, sw=1.5, op=0.9, dur=19.0,
+         bursts=[(0.17, 0.045), (0.53, 0.062), (0.81, 0.035)],
+         burst_period=20.0, burst_amp=12.0),
+    dict(period=100.0, amp=2.0, phase=1.7, sw=1.0, op=0.4, dur=13.0,
+         bursts=[(0.33, 0.03), (0.68, 0.038)],
+         burst_period=12.0, burst_amp=7.0),
+    dict(period=300.0, amp=6.5, phase=3.1, sw=1.0, op=0.20, dur=31.0),
+    dict(period=75.0, amp=1.2, phase=0.8, sw=0.8, op=0.26, dur=8.5),
+]
+
+
+def wave_html():
+    """Signals strip under the header: carriers and packets scrolling left to right.
+
+    Deliberately NOT driven by audio. A trace that looked like a live level
+    meter while showing nothing of the sort would mislead; this is ambient, and
+    its obvious periodicity says so.
+
+    Pure SVG + CSS: no JS and no timers. The scroll is a transform on a wrapper
+    sized to 200%, so it animates in CSS space rather than depending on how the
+    SVG happens to be scaled.
+    """
+    layers = []
+    for spec in _WAVE_LAYERS:
+        d = _trace_path(_WAVE_SPAN * 2, _WAVE_H, spec["period"], spec["amp"],
+                        spec["phase"], bursts=spec.get("bursts"),
+                        burst_period=spec.get("burst_period"),
+                        burst_amp=spec.get("burst_amp", 0.0))
+        layers.append(
+            f"<div class='vw-layer' style='animation-duration:{spec['dur']}s'>"
+            f"<svg class='vw-svg' viewBox='0 0 {_WAVE_SPAN * 2} {_WAVE_H}' "
+            f"preserveAspectRatio='none'>"
+            f"<path d='{d}' fill='none' stroke='var(--amber)' "
+            f"stroke-width='{spec['sw']}' stroke-opacity='{spec['op']}' "
+            f"vector-effect='non-scaling-stroke' stroke-linejoin='round'/>"
+            f"</svg></div>")
+    ticks = "".join(
+        f"<span class='vw-tick' style='left:{i * 6.25:.2f}%;"
+        f"height:{7 if i % 4 else 14}px'></span>" for i in range(32))
+    return (f"<div class='vj-wave' aria-hidden='true'>"
+            f"<div class='vw-grid'></div>"
+            f"<div class='vw-axis'></div>"
+            f"{''.join(layers)}"
+            f"<div class='vw-ticks'>{ticks}</div>"
+            f"<div class='vw-scan'></div></div>")
 
 
 def hero(icon, title, sub):

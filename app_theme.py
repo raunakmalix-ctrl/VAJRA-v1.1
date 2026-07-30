@@ -315,30 +315,54 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
 .tab-nav button i.ti{font-size:1rem; margin-right:8px; vertical-align:-2px;}
 
 /* ── Status ribbon (under the tab bar) ────────────────────────────────── */
-/* ── Waveform strip ──────────────────────────────────────────────────────
-   Ambient signal bar under the header. Pure CSS: a row of bars each with its
-   own delay, under a sweep that travels left to right. No JS and no timers, so
-   it costs nothing and cannot fall out of sync with anything. */
-.vj-wave{position:relative; display:flex; align-items:flex-end; gap:2px;
-  height:34px; margin:10px 4px 0; padding:0 10px; overflow:hidden;
-  background:var(--navy-deep); border-radius:var(--radius);
-  border:1px solid var(--border);}
-.vj-wave .vw-bar{flex:1 1 auto; min-width:2px; border-radius:1px;
-  background:linear-gradient(180deg,var(--amber),var(--amber-deep));
-  opacity:.55; animation:vjWave 1.5s ease-in-out infinite alternate;
-  transform-origin:bottom;}
+/* ── Signals strip ───────────────────────────────────────────────────────
+   Sine carriers scrolling left to right under the header. Each layer is a
+   wrapper at 200% width holding an SVG drawn at exactly twice the visible
+   span, translated by -50% -- so the loop returns to an identical phase and
+   has no visible seam. Pure CSS and SVG: no JS, no timers. */
+.vj-wave{position:relative; height:56px; margin:10px 4px 0; overflow:hidden;
+  background:radial-gradient(120% 180% at 50% 50%,
+    rgba(31,77,125,.35) 0%, var(--navy-deep) 70%);
+  border:1px solid var(--border); border-radius:var(--radius);}
+:root[data-theme="dark"] .vj-wave,.vj-wave{border-color:rgba(245,166,35,.18);}
+
+/* Faint measurement grid, so the traces read as being ON something. */
+.vj-wave .vw-grid{position:absolute; inset:0; opacity:.5;
+  background-image:
+    repeating-linear-gradient(90deg,rgba(245,166,35,.10) 0 1px,transparent 1px 46px),
+    repeating-linear-gradient(0deg,rgba(245,166,35,.07) 0 1px,transparent 1px 14px);}
+.vj-wave .vw-axis{position:absolute; left:0; right:0; top:50%; height:1px;
+  background:repeating-linear-gradient(90deg,
+    rgba(245,166,35,.42) 0 6px,transparent 6px 14px);}
+
+.vj-wave .vw-layer{position:absolute; inset:0; width:200%;
+  animation-name:vjScroll; animation-timing-function:linear;
+  animation-iteration-count:infinite;}
+.vj-wave .vw-svg{width:100%; height:100%; display:block;
+  filter:drop-shadow(0 0 4px rgba(245,166,35,.45));}
+
+/* Framing marks travelling with the carriers. */
+.vj-wave .vw-ticks{position:absolute; inset:0; width:200%;
+  animation:vjScroll 13s linear infinite;}
+.vj-wave .vw-tick{position:absolute; top:50%; width:1px;
+  transform:translateY(-50%); background:rgba(245,166,35,.5);}
+
+/* A slow sweep, as on a scope. */
+.vj-wave .vw-scan{position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(90deg,transparent 42%,
+    rgba(245,166,35,.16) 50%,transparent 58%);
+  background-size:260% 100%; animation:vjSweep 7s linear infinite;}
+
+/* Edges faded, so traces enter and leave rather than being cut off. */
 .vj-wave::after{content:''; position:absolute; inset:0; pointer-events:none;
-  background:linear-gradient(90deg,transparent 0%,
-    rgba(245,166,35,.00) 35%, rgba(245,166,35,.22) 50%,
-    rgba(245,166,35,.00) 65%, transparent 100%);
-  background-size:220% 100%; animation:vjSweep 4.5s linear infinite;}
-.vj-wave::before{content:''; position:absolute; left:0; right:0; top:50%;
-  height:1px; background:rgba(245,166,35,.18);}
-@keyframes vjWave{from{height:12%;} to{height:92%;}}
-@keyframes vjSweep{from{background-position:120% 0;} to{background-position:-120% 0;}}
+  background:linear-gradient(90deg,var(--navy-deep) 0%,transparent 7%,
+    transparent 93%,var(--navy-deep) 100%);}
+
+@keyframes vjScroll{from{transform:translate3d(0,0,0);}
+                    to{transform:translate3d(-50%,0,0);}}
+@keyframes vjSweep{from{background-position:130% 0;} to{background-position:-130% 0;}}
 @media (prefers-reduced-motion:reduce){
-  .vj-wave .vw-bar{animation:none; height:45%;}
-  .vj-wave::after{animation:none;}
+  .vj-wave .vw-layer,.vj-wave .vw-ticks,.vj-wave .vw-scan{animation:none;}
 }
 
 .status-ribbon{display:flex; align-items:center; gap:18px; flex-wrap:wrap;

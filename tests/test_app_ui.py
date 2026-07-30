@@ -76,7 +76,8 @@ sys.modules["gradio_client.utils"] = gcu
 # ── build the UI graph ──────────────────────────────────────────────────────
 import importlib.util  # noqa: E402
 
-spec = importlib.util.spec_from_file_location("appmod", r"D:\VAJRA-v1.1\app.py")
+spec = importlib.util.spec_from_file_location(
+    "appmod", os.path.join(_ROOT, "app.py"))
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 print("app.py imported — full UI graph built")
@@ -178,11 +179,32 @@ print("=" * 70)
 print("header waveform")
 print("=" * 70)
 w = m.wave_html()
-check("bars are emitted", w.count("vw-bar") > 40, str(w.count("vw-bar")))
-check("bars are individually offset",
-      len({b.split("animation-delay:")[1][:4]
-           for b in w.split("<span")[1:]}) > 5)
+check("traces are emitted", w.count("vw-layer") >= 3, str(w.count("vw-layer")))
+check("each trace scrolls at its own rate",
+      len({l.split("animation-duration:")[1].split("s")[0]
+           for l in w.split("vw-layer")[1:]}) >= 3)
+check("strokes stay hairline when the strip is stretched",
+      w.count("vector-effect='non-scaling-stroke'") >= 3)
 check("it is hidden from screen readers", "aria-hidden" in w)
+
+# The loop scrolls by half the drawn width, so any period that does not divide
+# the span rejoins at a different phase and the strip visibly jumps once per
+# cycle -- the kind of defect that only shows up after watching it for a while.
+seams = []
+for spec in m._WAVE_LAYERS:
+    for q in [spec["period"]] + ([spec["burst_period"]]
+                                 if spec.get("burst_period") else []):
+        if abs(m._WAVE_SPAN / q - round(m._WAVE_SPAN / q)) > 1e-9:
+            seams.append(q)
+check("every period divides the span, so the loop has no seam",
+      not seams, f"offenders: {seams}")
+
+# Amplitudes have to stay inside the strip; a packet taller than the box is
+# clipped flat, which reads as a rendering fault rather than a signal.
+tall = [sp for sp in m._WAVE_LAYERS
+        if sp["amp"] + sp.get("burst_amp", 0.0) > m._WAVE_H * 0.42]
+check("no trace can clip the top or bottom edge", not tall,
+      str([(sp["period"], sp["amp"] + sp.get("burst_amp", 0)) for sp in tall]))
 check("it is mounted under the status ribbon",
       "gr.HTML(ribbon_html())\n    gr.HTML(wave_html())" in _app_src)
 check("reduced-motion is respected",
