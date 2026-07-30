@@ -30,6 +30,10 @@ CSS = """
   --ink:#15202e; --muted:#5c6b7e; --tagline:#98a2b3;
   --border:#d7dee7; --border-strong:#c1cad6;
   --ok:#1f9d55; --err:#d64545; --warn:#dd8709;
+  /* Headings and labels use one accent in both themes. The lighter amber is
+     unreadable on a white card and the deeper one disappears on a dark one, so
+     --label carries whichever shade of the same hue actually has contrast. */
+  --label:#b26a05;
   --radius:6px; --radius-lg:10px;
   --shadow:0 8px 24px rgba(14,37,64,.10);
   --shadow-sm:0 2px 8px rgba(14,37,64,.08);
@@ -43,6 +47,7 @@ CSS = """
   --ink:#e9eff6; --muted:#93a1b3; --tagline:#7f8ba0;
   --border:#1f3550; --border-strong:#2c445f;
   --shadow:0 10px 30px rgba(0,0,0,.55); --shadow-sm:0 2px 10px rgba(0,0,0,.4);
+  --label:#f5a623;
   --grid-line:rgba(245,166,35,.06);
 }
 
@@ -195,23 +200,28 @@ body,.gradio-container{
 .gr-accordion .label-wrap,.gr-accordion span.label-wrap{
   font-family:'Rajdhani',sans-serif!important; font-weight:600!important;
   text-transform:uppercase!important; letter-spacing:.06em!important;
-  color:var(--navy)!important; font-size:.9rem!important;}
-:root[data-theme="dark"] .gr-accordion .label-wrap{color:var(--amber)!important;}
+  color:var(--label)!important; font-size:.9rem!important;}
 
 /* ── Section labels (custom) ──────────────────────────────────────────── */
 .section-label{font-family:'Rajdhani',sans-serif!important; font-weight:700!important;
   font-size:.68rem!important; letter-spacing:.16em!important; text-transform:uppercase!important;
-  color:var(--navy)!important; margin-bottom:14px!important;
+  color:var(--label)!important; margin-bottom:14px!important;
   display:flex!important; align-items:center!important; gap:9px!important;}
 .section-label::before{content:''; width:16px; height:3px; background:var(--amber); flex:0 0 auto;}
 .section-label::after{content:''; flex:1; height:1px;
   background:linear-gradient(90deg,var(--border-strong),transparent);}
-:root[data-theme="dark"] .section-label{color:var(--amber)!important;}
 
 /* ── Form controls ────────────────────────────────────────────────────── */
-label,.gr-label{font-family:'Rajdhani',sans-serif!important; font-weight:600!important;
+label,.gr-label,.block-title,span[data-testid="block-info"]{
+  font-family:'Rajdhani',sans-serif!important; font-weight:600!important;
   font-size:.72rem!important; letter-spacing:.08em!important; text-transform:uppercase!important;
-  color:var(--muted)!important;}
+  color:var(--label)!important;}
+/* Radio / checkbox CHOICE text is content, not a heading -- it must stay high
+   contrast. This was the faint grey that vanished in dark mode. */
+.gr-radio label span,.gr-checkbox-group label span,fieldset label span,
+input[type=radio]+span,input[type=checkbox]+span{
+  color:var(--ink)!important; text-transform:none!important;
+  letter-spacing:normal!important; font-size:.85rem!important;}
 textarea,input[type=text],input[type=number],select,.gr-input,.gr-text-input{
   background:var(--bg-soft)!important; border:1px solid var(--border-strong)!important;
   border-radius:var(--radius)!important; color:var(--ink)!important;
@@ -303,7 +313,7 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
   font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
   color:var(--muted); display:flex; align-items:center; gap:7px;}
 .status-ribbon .sr-item i{font-size:.95rem; color:var(--amber);}
-.status-ribbon .sr-item b{color:var(--navy); font-weight:700;}
+.status-ribbon .sr-item b{color:var(--label); font-weight:700;}
 :root[data-theme="dark"] .status-ribbon .sr-item b{color:var(--ink);}
 .sr-dot{width:8px; height:8px; border-radius:50%; background:var(--ok);
   box-shadow:0 0 0 3px rgba(31,157,85,.18); animation:vjPulse 1.8s ease-out infinite;}

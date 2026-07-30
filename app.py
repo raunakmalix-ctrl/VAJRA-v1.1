@@ -228,7 +228,7 @@ def _capability_html():
 
 def do_extract(video, allow_nc=False, progress=gr.Progress()):
     if video is None:
-        return "", None, warn("Upload a video first"), ""
+        return "", "", None, None, warn("Upload a video first"), ""
     GPU_LOCK.acquire()
     try:
         free_inprocess()
@@ -244,12 +244,14 @@ def do_extract(video, allow_nc=False, progress=gr.Progress()):
             allow_nc=bool(allow_nc),
             available={"xtts": os.path.exists(VENV_VOICE_PY)},
         )
-        return (text, state,
+        # Same text into both panes: the left one is the untouched reference to
+        # compare against, the right one is what the operator edits.
+        return (text, text, state, state.get("audio"),
                 ok(f"{len(state['segments'])} segments · "
                    f"lang={state['language']} · tier {preview['tier']}"),
                 _routing_html(preview))
     except Exception as e:
-        return "", None, err(str(e)), ""
+        return "", "", None, None, err(str(e)), ""
     finally:
         GPU_LOCK.release()
 
@@ -259,9 +261,9 @@ def do_relip(state, edited_text, method, steps, guidance,
              windowed=True, allow_nc=False, max_stretch=0.15,
              progress=gr.Progress()):
     if not state:
-        return None, warn("Extract a transcript first"), ""
+        return None, None, warn("Extract a transcript first"), ""
     if not edited_text or not edited_text.strip():
-        return None, warn("Transcript is empty"), ""
+        return None, None, warn("Transcript is empty"), ""
     GPU_LOCK.acquire()
     try:
         free_inprocess()
@@ -279,9 +281,14 @@ def do_relip(state, edited_text, method, steps, guidance,
             max_stretch=float(max_stretch),
             progress=progress,
         )
-        return out, ok(os.path.basename(out)), _relip_report(state)
+        return (out, state.get("edited_audio"), ok(os.path.basename(out)),
+                _relip_report(state))
     except Exception as e:
-        return None, err(str(e)), _relip_report(state or {})
+        # The edited audio may exist even when lip-sync failed, and hearing it
+        # is how the operator tells an audio problem from a video one.
+        return ((state or {}).get("edited_audio"),
+                (state or {}).get("edited_audio"),
+                err(str(e)), _relip_report(state or {}))
     finally:
         GPU_LOCK.release()
 
@@ -504,8 +511,16 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     ed_extract = gr.Button("◐  Extract Transcript", variant="secondary")
                     gr.HTML("<div class='section-label'>Transcript "
                             "(edit words · keep one segment per line)</div>")
-                    ed_text = gr.Textbox(label="", lines=8,
-                        placeholder="Transcript appears here after extraction…")
+                    with gr.Row():
+                        ed_orig = gr.Textbox(
+                            label="Original (reference)", lines=10,
+                            interactive=False, show_copy_button=True,
+                            placeholder="Extracted transcript appears here…")
+                        ed_text = gr.Textbox(
+                            label="Edited — change the words here", lines=10,
+                            show_copy_button=True,
+                            placeholder="Edit this side; the left stays as "
+                                        "extracted so you can compare.")
                     with gr.Row():
                         ed_method = gr.Radio(
                             ["LatentSync (best)", "Wav2Lip (fast)"],
@@ -553,18 +568,27 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     gr.HTML("<div class='section-label'>Output</div>")
                     ed_out = gr.Video(label="", elem_classes=["output-media"])
                     ed_status = gr.HTML(AWAIT)
+                    gr.HTML("<div class='section-label'>Listen &amp; compare</div>")
+                    with gr.Row():
+                        ed_src_audio = gr.Audio(
+                            label="Original audio (from the video)",
+                            type="filepath", interactive=False)
+                        ed_new_audio = gr.Audio(
+                            label="Edited audio", type="filepath",
+                            interactive=False)
                     # The measurements are the point of the realism layer: an edit
                     # that claims to be undetectable has to show its numbers.
                     ed_report = gr.HTML("")
                     with gr.Accordion("Language capability matrix", open=False):
                         gr.HTML(_capability_html())
             ed_extract.click(do_extract, [ed_video, ed_nc],
-                             [ed_text, ed_state, ed_status, ed_report])
+                             [ed_orig, ed_text, ed_state, ed_src_audio,
+                              ed_status, ed_report])
             ed_relip.click(do_relip,
                            [ed_state, ed_text, ed_method, ed_steps, ed_guid,
                             ed_realism, ed_word, ed_sep, ed_windowed, ed_nc,
                             ed_stretch],
-                           [ed_out, ed_status, ed_report])
+                           [ed_out, ed_new_audio, ed_status, ed_report])
 
         # ── 02 Text → Image ─────────────────────────────────────────────────
         with gr.Tab("02 · Text → Image", id=1):

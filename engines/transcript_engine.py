@@ -511,6 +511,9 @@ class TranscriptEngine(BaseEngine):
 
         new_audio = timestamp_file("edited_audio", "wav")
         dsp.save(new_audio, track, sr)
+        # Surfaced so the operator can A/B the audio directly, without waiting
+        # for the lip-sync pass or hunting for the file.
+        state["edited_audio"] = new_audio
 
         if progress is not None:
             progress(0.7, desc="Re-syncing lips ...")
