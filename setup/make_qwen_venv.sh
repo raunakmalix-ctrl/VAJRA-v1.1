@@ -7,16 +7,15 @@
 # Optional/heavy: run only if you want the Image Edit tab.
 set -e
 
-ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-VENVS="${IMAGE_TALK_VENVS:-$ROOT/venvs}"
-mkdir -p "$VENVS"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+source "$HERE/_venv_common.sh"
 
 # Matches venv_wan/venv_ltx2's CUDA 12.6 torch wheels.
 CU="https://download.pytorch.org/whl/cu126"
-PY312="$(command -v python3.12 || command -v python3)"
-echo "==> building venv_qwen with $PY312"
-
-pip install -q virtualenv
+echo "==> building venv_qwen"
+# Shared with every other builder and they run concurrently, so this is
+# lock-guarded and idempotent -- see ensure_py312 in _venv_common.sh.
+ensure_py312
 if [ ! -x "$VENVS/venv_qwen/bin/python" ]; then
   python -m virtualenv -p "$PY312" "$VENVS/venv_qwen"
   "$VENVS/venv_qwen/bin/pip" install -q --upgrade pip wheel

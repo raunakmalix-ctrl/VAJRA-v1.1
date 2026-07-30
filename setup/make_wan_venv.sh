@@ -6,16 +6,15 @@
 # tab's reference-image (motion video) mode.
 set -e
 
-ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-VENVS="${IMAGE_TALK_VENVS:-$ROOT/venvs}"
-mkdir -p "$VENVS"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+source "$HERE/_venv_common.sh"
 
 # Wan2.2 wants CUDA > 12.7, matching venv_qwen/venv_ltx2's cu126 torch wheels.
 CU="https://download.pytorch.org/whl/cu126"
-PY312="$(command -v python3.12 || command -v python3)"
-echo "==> building venv_wan with $PY312"
-
-pip install -q virtualenv
+echo "==> building venv_wan"
+# Shared with every other builder and they run concurrently, so this is
+# lock-guarded and idempotent -- see ensure_py312 in _venv_common.sh.
+ensure_py312
 if [ ! -x "$VENVS/venv_wan/bin/python" ]; then
   python -m virtualenv -p "$PY312" "$VENVS/venv_wan"
   "$VENVS/venv_wan/bin/pip" install -q --upgrade pip wheel
