@@ -72,10 +72,20 @@ def _venv_python(name):
     return os.path.join(VENV_ROOT, name, "bin", "python")
 
 VENV_VOICE_PY      = _venv_python("venv_voice")
+VENV_DEMUCS_PY     = _venv_python("venv_demucs")
 VENV_LATENTSYNC_PY = _venv_python("venv_latentsync")
 VENV_LTX2_PY       = _venv_python("venv_ltx2")
 VENV_WAN_PY        = _venv_python("venv_wan")
 VENV_QWEN_PY       = _venv_python("venv_qwen")
+
+# Demucs v4 (htdemucs, MIT) speech/background separation for Edit & Relip.
+# Editing the speech stem alone and re-laying the UNTOUCHED background over the
+# result is the single strongest realism measure available: the room ambience,
+# music and traffic play continuously across the edit because they were never
+# regenerated. Runs in its own venv (built by setup/make_demucs_venv.sh) -- it
+# pins its own torch/torchaudio pair, which conflicts with the principal
+# runtime's diffusion stack.
+DEMUCS_MODEL = os.environ.get("DEMUCS_MODEL", "htdemucs")
 
 # LTX-2.3 (Lightricks) text -> video, or image+prompt -> motion video, WITH
 # synchronized audio (a single DiT-based audio-video model; diffusers exposes

@@ -55,6 +55,8 @@ def warn_low_disk(min_gb, label="this model"):
 _ENV_HINTS = {
     "venv_voice":      ("VOICE",   "voice",   "Edit & Relip (voice cloning)"),
     "venv_latentsync": ("LIPSYNC", "lipsync", "Edit & Relip (lip re-sync)"),
+    "venv_demucs":     ("SEPARATE", "demucs",
+                        "Edit & Relip (speech/background separation)"),
     "venv_wan":        ("WAN",     "wan",     "Text -> Video (Wan2.2-I2V)"),
     "venv_qwen":       ("QWEN",    "qwen",    "Image Edit"),
     "venv_ltx2":       ("LTX2",    "ltx2",    "Text -> Video (LTX 2.3)"),

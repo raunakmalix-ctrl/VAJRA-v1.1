@@ -310,6 +310,98 @@ check("length preserved even when capped", abs(t5.size - orig.size) <= 1,
 
 print()
 print("=" * 74)
+print("speech/background separation path")
+print("=" * 74)
+
+
+class StubSeparate:
+    """Stands in for Demucs: splits the track into a 'speech' part and a
+    'background' part that sum back to the original, so the remix step can be
+    verified exactly."""
+    def __init__(self, avail=True):
+        self._avail = avail
+        self.calls = 0
+
+    def available(self):
+        return self._avail
+
+    def run(self, audio_path, model=None):
+        self.calls += 1
+        a, sr_ = dsp.load(audio_path, mono=True)
+        # A fixed, invertible split: background is a known fraction.
+        bg = (0.25 * a).astype(np.float32)
+        sp = (a - bg).astype(np.float32)
+        ps = os.path.join(TMP, "stub_speech.wav")
+        pb = os.path.join(TMP, "stub_bg.wav")
+        dsp.save(ps, sp, sr_)
+        dsp.save(pb, bg, sr_)
+        return ps, pb
+
+
+_calls["n"] = 0
+eng.voice = StubVoice()
+sep = StubSeparate(avail=True)
+eng.separate = sep
+st6 = dict(state); st6.pop("match_reports", None)
+eng.apply_edits(st6, edited, separate="auto")
+check("separation engine invoked", sep.calls == 1, f"calls={sep.calls}")
+check("stem paths recorded", "stem_speech" in st6 and "stem_background" in st6)
+t6, _ = dsp.load(out_audio["path"], mono=True)
+check("length preserved through separate+remix", abs(t6.size - orig.size) <= 1,
+      f"{t6.size} vs {orig.size}")
+# Outside the edit the speech stem is untouched, so speech+background must
+# reconstruct the original sample-for-sample.
+r6 = st6["match_reports"][0]
+s6, e6 = r6["splice"]["start"], r6["splice"]["end"]
+pad = int(0.05 * SR)
+check("remix reconstructs original outside the edit",
+      np.allclose(t6[:max(s6 - pad, 0)], orig[:max(s6 - pad, 0)], atol=2e-5),
+      f"max diff={np.max(np.abs(t6[:max(s6-pad,0)] - orig[:max(s6-pad,0)])):.2e}")
+check("edited region actually differs",
+      not np.allclose(t6[s6:e6], orig[s6:e6], atol=1e-3))
+
+# separate=False must skip it entirely.
+sep.calls = 0
+_calls["n"] = 0
+st7 = dict(state); st7.pop("match_reports", None)
+eng.apply_edits(st7, edited, separate=False)
+check("separate=False skips separation", sep.calls == 0, f"calls={sep.calls}")
+check("no stem paths recorded when disabled", "stem_speech" not in st7)
+
+# "auto" must degrade gracefully when the environment is absent.
+sep_missing = StubSeparate(avail=False)
+eng.separate = sep_missing
+_calls["n"] = 0
+st8 = dict(state); st8.pop("match_reports", None)
+eng.apply_edits(st8, edited, separate="auto")
+check("auto skips separation when unavailable", sep_missing.calls == 0)
+t8, _ = dsp.load(out_audio["path"], mono=True)
+check("still produces a valid track without separation",
+      abs(t8.size - orig.size) <= 1, f"{t8.size}")
+
+
+# A failing separator must not fail the edit under "auto", but must under True.
+class BoomSeparate(StubSeparate):
+    def run(self, audio_path, model=None):
+        self.calls += 1
+        raise RuntimeError("demucs environment not built")
+
+
+eng.separate = BoomSeparate(avail=True)
+_calls["n"] = 0
+st9 = dict(state); st9.pop("match_reports", None)
+eng.apply_edits(st9, edited, separate="auto")
+check("auto tolerates a failing separator", len(st9["match_reports"]) == 1)
+try:
+    st10 = dict(state); st10.pop("match_reports", None)
+    eng.apply_edits(st10, edited, separate=True)
+    check("separate=True propagates the failure", False)
+except RuntimeError as ex:
+    check("separate=True propagates the failure", "demucs" in str(ex).lower(),
+          str(ex))
+
+print()
+print("=" * 74)
 if FAILS:
     print(f"{len(FAILS)} FAILURE(S):")
     for f in FAILS:

@@ -1,0 +1,10 @@
+# venv_demucs — Demucs v4 speech/background separation (MIT). Python 3.12.
+# torch ~2.7 (cu126) is installed separately by setup/make_demucs_venv.sh.
+#
+# Demucs pins its own torch/torchaudio pair, which is why this cannot live in
+# the principal runtime alongside the diffusion stack. Separation is a
+# self-contained, one-shot step, so paying for an isolated environment costs
+# nothing at inference time -- the process exits and returns all its VRAM.
+demucs
+soundfile
+setuptools<81   # Python 3.12 venvs omit setuptools; some deps need pkg_resources

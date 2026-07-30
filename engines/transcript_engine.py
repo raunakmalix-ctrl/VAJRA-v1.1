@@ -32,6 +32,7 @@ from core.config import FFMPEG_PATH, WHISPERX_MODEL
 from core.device import DEVICE
 from engines.voice_engine import VoiceEngine
 from engines.lipsync_engine import LipSyncEngine
+from engines.separate_engine import SeparateEngine
 
 # XTTS supports en/hi; anything else falls back to English.
 _XTTS_LANGS = {"en", "hi"}
@@ -71,8 +72,9 @@ def _extract_audio(video_path):
 class TranscriptEngine(BaseEngine):
 
     def __init__(self):
-        self.voice   = VoiceEngine()
-        self.lipsync = LipSyncEngine()
+        self.voice    = VoiceEngine()
+        self.lipsync  = LipSyncEngine()
+        self.separate = SeparateEngine()
 
     # ── step 1 ────────────────────────────────────────────────────────────────
     def extract_transcript(self, video_path):
@@ -151,7 +153,7 @@ class TranscriptEngine(BaseEngine):
     def apply_edits(self, state, edited_text, method="latentsync",
                     inference_steps=20, guidance_scale=1.5, progress=None,
                     realism=True, max_stretch=None, word_level=True,
-                    auto_reference=True):
+                    auto_reference=True, separate="auto"):
         """Re-voice only the changed lines and splice them back in.
 
         realism: run the dsp match chain (duration fit, spectral/room/loudness
@@ -167,6 +169,11 @@ class TranscriptEngine(BaseEngine):
         auto_reference: choose the cleanest window of the recording as the
         cloning reference instead of handing the model the whole track. Reference
         quality dominates clone quality more than any inference setting.
+
+        separate: "auto" (use speech/background separation when its environment
+        is built), True (require it), or False (never). Editing the speech stem
+        and re-laying the untouched background is the strongest single realism
+        measure available, because the ambience never stops across the join.
         """
         if not state:
             raise ValueError("Extract a transcript first.")
@@ -186,7 +193,34 @@ class TranscriptEngine(BaseEngine):
         # audio stays sample-identical to the source and later span indices stay
         # valid -- both of which the previous concatenate-everything approach
         # could not guarantee.
-        track, sr = dsp.load(state["audio"], mono=True)
+        # Separate speech from background when available. The edit then happens
+        # on the speech stem only, and the untouched background is re-laid over
+        # the result at the end -- so the room, music and traffic continue
+        # unbroken across every join, because they were never regenerated.
+        background = None
+        use_sep = bool(separate) and (
+            self.separate.available() if separate == "auto" else True)
+        if use_sep:
+            try:
+                speech_path, bg_path = self.separate.run(state["audio"])
+                state["stem_speech"] = speech_path
+                state["stem_background"] = bg_path
+                track, sr = dsp.load(speech_path, mono=True)
+                background, bg_sr = dsp.load(bg_path, mono=True)
+                background = dsp.resample(background, bg_sr, sr)
+                background = dsp.pad_or_trim(background, track.shape[0])
+                print(f"[Transcript] Separated: editing the speech stem; "
+                      f"background will be re-laid untouched.")
+            except Exception as e:
+                if separate is True:
+                    raise
+                # "auto" must not fail an edit over an optional enhancement.
+                print(f"[Transcript] Separation unavailable ({e}); "
+                      f"editing the mixed track instead.")
+                background = None
+                track, sr = dsp.load(state["audio"], mono=True)
+        else:
+            track, sr = dsp.load(state["audio"], mono=True)
         n = track.shape[0]
 
         def _clamp(t):
@@ -314,6 +348,14 @@ class TranscriptEngine(BaseEngine):
                       f"{d.get('shortfall_sec')}s off. {d.get('advice')}")
 
         state["match_reports"] = reports
+
+        if background is not None:
+            # Re-lay the original background over the edited speech. Nothing in
+            # this bed was regenerated, so its continuity is genuine.
+            track = (dsp.as_float32(track)
+                     + dsp.pad_or_trim(background, track.shape[0]))
+            track = dsp.limit_peak(track, ceiling_db=-0.5)
+            print("[Transcript] Re-laid the untouched background stem.")
 
         new_audio = timestamp_file("edited_audio", "wav")
         dsp.save(new_audio, track, sr)
