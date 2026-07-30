@@ -38,6 +38,10 @@ lpips        # CodeFormer's basicsr imports this
 # WhisperX's pyannote/torchaudio coupling (which breaks on Colab's torchaudio).
 faster-whisper
 
+# DSP realism layer (dsp/): BS.1770 loudness for splice matching. Pure
+# numpy/scipy, no heavy deps -- degrades to RMS matching if unavailable.
+pyloudnorm
+
 # Media utils
 pydub
 soundfile
