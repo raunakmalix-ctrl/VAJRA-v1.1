@@ -11,6 +11,7 @@ python tests/test_vision.py              # 93 assertions on masks and windowing
 python tests/test_relip_integration.py   # 49 assertions on the relip flow
 python tests/test_router_scorecard.py    # 74 assertions on routing + metrics
 python tests/test_app_ui.py              # 15 assertions on the UI report panels
+python tests/test_notebook.py            # 15 assertions on the Colab notebook
 ```
 
 What each one is actually for:
@@ -38,6 +39,10 @@ What each one is actually for:
   the Edit & Relip report panels from real `core.router` / `evaluation.scorecard`
   payloads. A renamed dict key would otherwise pass every other check here and
   fail only on a GPU.
+- **`test_notebook.py`** — parses every code cell in the Colab notebook and
+  checks the Step 6 flags against the build dispatcher's target list. A string
+  literal split across two cell lines is invisible in a diff and fails minutes
+  into a GPU session; that has happened twice.
 
 Requires only `numpy`, `scipy`, `soundfile` and (optionally) `pyloudnorm`; all
 are in `requirements/main.txt`. Without `pyloudnorm` the loudness stage falls
