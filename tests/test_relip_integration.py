@@ -160,6 +160,15 @@ def cap_lipsync(video_path, audio_path, **kw):
     return video_path
 
 
+def cap_lipsync_windowed(video_path, audio_path, windows=None, **kw):
+    out_audio["path"] = audio_path
+    out_audio["windows"] = list(windows or [])
+    return video_path
+
+
+eng.lipsync.run_windowed = cap_lipsync_windowed
+
+
 eng.lipsync.run = cap_lipsync
 
 res = eng.apply_edits(state, edited, method="latentsync")
@@ -232,6 +241,21 @@ check("room tone laid at the neighbourhood floor level",
       f"bed target={nf.get('target_floor_db')} neighbourhood={f_ref:.1f}")
 check("bed level derived, not guessed", "bed_gain_db" in nf, str(nf))
 check("no clipping", dsp.peak(new_track) <= 1.0, f"peak={dsp.peak(new_track):.4f}")
+
+# Windowed lip-sync must receive exactly the edited ranges, so the model only
+# touches footage that changed.
+check("lip-sync received edit windows", len(out_audio.get("windows", [])) == 1,
+      str(out_audio.get("windows")))
+check("windows recorded on state", len(state.get("lipsync_windows", [])) == 1)
+lw = out_audio["windows"][0]
+check("window matches the edited span",
+      abs(lw[0] - s_ / SR) < 0.3 and abs(lw[1] - e_ / SR) < 0.3,
+      f"window {lw} vs span {s_/SR:.2f}-{e_/SR:.2f}")
+import vision as _vis
+_cov = _vis.coverage(_vis.merge_windows(out_audio["windows"], pad_sec=0.35,
+                                        min_gap_sec=0.75, duration_sec=10.0), 10.0)
+check("lip-sync covers only a fraction of the clip", _cov < 0.35,
+      f"{_cov*100:.1f}% of 10s")
 
 print()
 print("=" * 74)

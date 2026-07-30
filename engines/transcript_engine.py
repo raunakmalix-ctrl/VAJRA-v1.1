@@ -153,7 +153,8 @@ class TranscriptEngine(BaseEngine):
     def apply_edits(self, state, edited_text, method="latentsync",
                     inference_steps=20, guidance_scale=1.5, progress=None,
                     realism=True, max_stretch=None, word_level=True,
-                    auto_reference=True, separate="auto"):
+                    auto_reference=True, separate="auto",
+                    windowed_lipsync=True):
         """Re-voice only the changed lines and splice them back in.
 
         realism: run the dsp match chain (duration fit, spectral/room/loudness
@@ -174,6 +175,11 @@ class TranscriptEngine(BaseEngine):
         is built), True (require it), or False (never). Editing the speech stem
         and re-laying the untouched background is the strongest single realism
         measure available, because the ambience never stops across the join.
+
+        windowed_lipsync: re-render lips only over the edited time ranges and
+        composite them into the original frames, instead of putting the whole
+        clip through the model. Falls back to whole-video sync automatically when
+        the edits already cover most of the footage.
         """
         if not state:
             raise ValueError("Extract a transcript first.")
@@ -362,9 +368,26 @@ class TranscriptEngine(BaseEngine):
 
         if progress is not None:
             progress(0.7, desc="Re-syncing lips ...")
-        out = self.lipsync.run(
-            video_path=state["video"], audio_path=new_audio,
-            method=method, inference_steps=inference_steps,
-            guidance_scale=guidance_scale,
-        )
+
+        # The edit spans are already known in seconds, so only those ranges need
+        # re-rendering. Everything else keeps its original pixels, which both
+        # saves model time proportional to how little changed and keeps the
+        # model from touching footage that had no reason to change.
+        edit_windows = [(s0 / float(sr), e0 / float(sr))
+                        for _, s0, e0, _, _ in edits]
+        state["lipsync_windows"] = edit_windows
+
+        if windowed_lipsync and hasattr(self.lipsync, "run_windowed"):
+            out = self.lipsync.run_windowed(
+                video_path=state["video"], audio_path=new_audio,
+                windows=edit_windows,
+                method=method, inference_steps=inference_steps,
+                guidance_scale=guidance_scale, progress=progress,
+            )
+        else:
+            out = self.lipsync.run(
+                video_path=state["video"], audio_path=new_audio,
+                method=method, inference_steps=inference_steps,
+                guidance_scale=guidance_scale,
+            )
         return out
