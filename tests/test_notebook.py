@@ -16,7 +16,7 @@ import os
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NOTEBOOK = os.path.join(_ROOT, "VAJRA_v1.1_Colab.ipynb")
+NOTEBOOK = os.path.join(_ROOT, "VAJRA_2.0_Colab.ipynb")
 
 FAILS = []
 

@@ -1,11 +1,15 @@
-# VAJRA v1.1 — AI Media Studio
+# VAJRA 2.0 — AI Media Studio
 
 A single Gradio app (built for Google Colab Pro, runs 100% local/offline once
 models are cached) bundling six AI media tools:
 
 1. **Edit & Relip** — upload a talking-head video, extract its transcript, edit
-   the words, and only the changed segments are re-voiced (in the speaker's own
-   cloned voice) and the lips re-synced to match.
+   the words, and only the changed *words* are re-voiced (in the speaker's own
+   cloned voice) and only the affected video windows re-synced. Replaced audio is
+   matched to its surroundings — duration, loudness, tone, room and noise floor —
+   and the result is scored against the recording's own natural word boundaries,
+   so the edit's detectability is measured rather than assumed. Everything
+   outside an edit passes through bit-identical.
 2. **Text → Image** — photorealistic image generation from a prompt.
 3. **Face Swap** — source face onto a target **image or video**.
 4. **Text → Video** — prompt-only video generation with synchronized audio, or
@@ -22,7 +26,8 @@ models are cached) bundling six AI media tools:
 | Feature | Models |
 |---|---|
 | Transcript | faster-whisper (word-level timestamps) |
-| Voice clone (en/hi) | XTTS-v2 |
+| Voice clone (17 languages) | XTTS-v2 |
+| Speech / background separation | Demucs v4 (htdemucs) |
 | Lip re-sync | LatentSync (primary) · Wav2Lip (fallback) |
 | Text → image | RealVisXL V5.0 (default) / SDXL base |
 | Face swap | InsightFace `inswapper_128` + GFPGAN (default) / CodeFormer |
@@ -37,18 +42,32 @@ only ones whose gating status wasn't confirmed at integration time.
 
 ## Run in Colab
 
-Open **`VAJRA_v1.1_Colab.ipynb`**, set the runtime to a GPU (A100 recommended),
+Open **`VAJRA_2.0_Colab.ipynb`**, set the runtime to a GPU (A100 recommended),
 and run the cells top to bottom. The last cell prints a public `*.gradio.live`
 link to the studio.
 
-Cells **7b / 7c / 7d** build the optional, heavy venvs (Wan2.2-I2V,
-Qwen-Image-Edit, LTX-2.3) — skip whichever tabs/engines you don't need.
-LTX-2.3 (cell 7d) powers all of Text → Video (prompt-only and, optionally,
-the reference-photo motion-video path) and needs its own venv: its pipeline
-needs a newer `transformers` (for its Gemma 3 text encoder) than any other
-venv here pins.
+**Steps 6 and 7 are selective.** Each module's dependency stack is mutually
+incompatible with the others, so each lives in its own isolated environment —
+and building all of them takes many minutes you don't need to spend. Set the
+flags in Step 6 for the modules you actually intend to use; unselected ones
+cost nothing, and re-running later adds a module without rebuilding what you
+already have.
 
-To persist **model weights** across sessions, set `USE_DRIVE = True` in cell 2
+| Module | Step 6 environments | Step 7 weight groups |
+|---|---|---|
+| Edit & Relip | `VOICE` + `LIPSYNC` (+ `SEPARATE`, recommended) | `voice`, `lipsync` |
+| Text → Image | *none* | *none* |
+| Face Swap | *none* | `faceswap` |
+| Text → Video | `LTX2` and/or `WAN` | *none* |
+| Image Edit | `QWEN` | *none* |
+| Media Studio | *none* | *none* |
+
+Text → Image, Face Swap and Media Studio run in the principal runtime, so they
+need no isolated environment at all. LTX-2.3 needs its own because its pipeline
+requires a newer `transformers` (for its Gemma 3 text encoder) than any other
+environment here pins.
+
+To persist **model weights** across sessions, set `USE_DRIVE = True` in Step 2
 (covers everything fetched at setup *and* anything downloaded on first use of
 a tab). Isolated venvs are always rebuilt locally each session — Google Drive
 can't execute a venv's python.
@@ -57,12 +76,16 @@ can't execute a venv's python.
 
 ```
 app.py / app_theme.py     # Gradio UI (6 tabs, themed, share link)
-core/                     # config, device, model_manager, subprocess_runner
+core/                     # config, device, model_manager, subprocess_runner, router, textdiff
 engines/                  # one module per feature
-workers/                  # scripts run inside isolated venvs (voice, LTX-2.3, Wan2.2-I2V, Qwen-Image-Edit)
-setup/                    # install_main.sh · make_venvs.sh · make_ltx2_venv.sh · make_wan_venv.sh · make_qwen_venv.sh · download_models.py
+workers/                  # scripts run inside isolated venvs (voice, Demucs, LTX-2.3, Wan2.2-I2V, Qwen-Image-Edit)
+dsp/                      # audio realism: loudness, spectral, room, noise floor, splice, time-fit
+vision/                   # frame windowing, feathered masks, compositing
+evaluation/               # objective detectability scorecard
+setup/                    # install_main.sh · make_venvs.sh (selective dispatcher) · one builder per environment · download_models.py
 requirements/             # one pinned file per venv
 third_party/              # cloned at setup: Wav2Lip, LatentSync, CodeFormer
+tests/                    # offline CPU checks — see tests/README.md
 ```
 
 **Why isolated venvs?** XTTS, LatentSync, LTX-2.3, Wan2.2 and Qwen-Image-Edit
