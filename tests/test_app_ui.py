@@ -145,6 +145,50 @@ check("the report sits inside a collapsed accordion",
           os.path.join(_ROOT, "app.py"), encoding="utf-8").read())
 
 
+print()
+print("=" * 70)
+print("the UI names capabilities, not vendors")
+print("=" * 70)
+# Swapping an engine should not change what the operator has learned to read,
+# and a model name in a label goes stale the moment the model is replaced. The
+# names stay in the logs and in core/router.py, where they are operationally
+# useful.
+_app_src = open(os.path.join(_ROOT, "app.py"), encoding="utf-8").read()
+_visible = "\n".join(l for l in _app_src.splitlines()
+                     if not l.strip().startswith("#"))
+for name in ("SDXL", "RealVis", "LatentSync", "Wav2Lip", "XTTS", "Wan2.2",
+             "LTX", "Qwen", "InsightFace", "GFPGAN", "CodeFormer",
+             "ViiTor", "Demucs", "venv_"):
+    check(f"no '{name}' in user-facing strings", name not in _visible)
+
+# Renamed choices are dictionary keys elsewhere; a half-rename falls through to
+# a default instead of failing, so both sides are pinned here.
+for choice, key in (("Best quality", "latentsync"), ("Fast", "wav2lip"),
+                    ("Photoreal (recommended)", "sdxl_real"),
+                    ("General purpose", "sdxl"),
+                    ("Standard", "gfpgan"), ("High detail", "codeformer")):
+    check(f"choice '{choice}' still maps to {key}",
+          f'"{choice}": "{key}"' in _app_src)
+check("the motion-engine branch matches a current choice label",
+      'startswith("Synchronized audio")' in _app_src
+      and '"Synchronized audio (faster, adds a soundtrack)"' in _app_src)
+
+print()
+print("=" * 70)
+print("header waveform")
+print("=" * 70)
+w = m.wave_html()
+check("bars are emitted", w.count("vw-bar") > 40, str(w.count("vw-bar")))
+check("bars are individually offset",
+      len({b.split("animation-delay:")[1][:4]
+           for b in w.split("<span")[1:]}) > 5)
+check("it is hidden from screen readers", "aria-hidden" in w)
+check("it is mounted under the status ribbon",
+      "gr.HTML(ribbon_html())\n    gr.HTML(wave_html())" in _app_src)
+check("reduced-motion is respected",
+      "prefers-reduced-motion" in open(
+          os.path.join(_ROOT, "app_theme.py"), encoding="utf-8").read())
+
 print("=" * 70)
 if FAILS:
     print(f"{len(FAILS)} FAILURE(S): " + "; ".join(FAILS))

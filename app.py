@@ -91,6 +91,27 @@ def ribbon_html():
     )
 
 
+def wave_html(bars=72):
+    """Ambient waveform strip under the header.
+
+    Bars are emitted with staggered delays and durations so the motion reads as
+    a signal rather than a metronome; the rest is CSS. Deliberately decorative:
+    it is NOT wired to any audio, because a bar that looked like a live level
+    meter while showing nothing of the sort would be worse than an obvious
+    ornament.
+    """
+    import math
+    out = []
+    for i in range(bars):
+        # Two offset sine waves, so neighbouring bars differ without the whole
+        # row marching in step.
+        delay = (math.sin(i * 0.55) + math.sin(i * 0.17) + 2.0) * 0.28
+        dur = 1.15 + 0.5 * abs(math.sin(i * 0.31))
+        out.append(f"<span class='vw-bar' style='animation-delay:{delay:.2f}s;"
+                   f"animation-duration:{dur:.2f}s'></span>")
+    return f"<div class='vj-wave' aria-hidden='true'>{''.join(out)}</div>"
+
+
 def hero(icon, title, sub):
     return (f"<div class='tab-hero'><div class='th-ico'><i class='ti {icon}'></i></div>"
             f"<div class='th-txt'><span class='th-title'>{title}</span>"
@@ -128,6 +149,16 @@ def _engine_availability():
 _TIER_COLOUR = {"A": "var(--ok)", "B": "var(--ok)",
                 "C": "var(--amber-deep)", "D": "var(--err)"}
 
+# The UI names what a component DOES, not which third-party model implements it
+# today. Swapping an engine should not change what the operator has learned to
+# read. The model names remain in the logs and in core/router.py, where they are
+# operationally useful.
+_ENGINE_LABEL = {
+    "viitor_nar": "in-place infill",
+    "voicecraft_x": "in-place infill (non-commercial)",
+    "xtts": "phrase regeneration",
+}
+
 
 def _panel(title, rows):
     """Small key/value panel. Rows are (label, html_value) pairs."""
@@ -150,7 +181,8 @@ def _routing_html(decision):
     col = _TIER_COLOUR.get(tier, "var(--muted)")
     rows = [
         ("Tier", f"<b style='color:{col}'>{tier}</b> — {decision.get('quality','')}"),
-        ("Engine", decision.get("label", "?")),
+        ("Method", _ENGINE_LABEL.get(decision.get("engine"),
+                                     decision.get("granularity", "?"))),
         ("Granularity", decision.get("granularity", "?")),
         ("Language", decision.get("language", "?")),
     ]
@@ -214,7 +246,7 @@ def do_extract(video, allow_nc=False, progress=gr.Progress()):
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        progress(0.3, desc="Transcribing (faster-whisper) ...")
+        progress(0.3, desc="Transcribing ...")
         text, state = transcript.extract_transcript(video)
         # Preview the routing decision now, so the operator learns what quality
         # this language can reach BEFORE spending GPU time on the edit.
@@ -248,7 +280,8 @@ def do_relip(state, edited_text, method, steps, guidance,
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        method_map = {"LatentSync": "latentsync", "Wav2Lip": "wav2lip"}
+        # Keyed on the visible choice text, so these two must change together.
+        method_map = {"Best quality": "latentsync", "Fast": "wav2lip"}
         m = next((v for k, v in method_map.items() if method.startswith(k)),
                  "latentsync")
         sep_map = {"Auto": "auto", "Always": True, "Never": False}
@@ -323,7 +356,7 @@ def do_voice_edit(audio, original_text, edited_text, mask_ratio,
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        progress(0.1, desc="Contacting ViiTorVoice ...")
+        progress(0.1, desc="Contacting the VAJRA voice engine ...")
         out = viitor.local_edit(
             source_audio_path=audio, original_text=original_text,
             edited_text=edited_text,
@@ -350,7 +383,7 @@ def do_voice_clone(ref_audio, text, emotion, nvv, progress=gr.Progress()):
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        progress(0.1, desc="Contacting ViiTorVoice ...")
+        progress(0.1, desc="Contacting the VAJRA voice engine ...")
         out = viitor.clone(
             ref_audio_path=ref_audio, text=text,
             emotion_guidance_scale=float(emotion),
@@ -379,8 +412,8 @@ def run_txt2img(prompt, variant, negative, width, height, steps, guidance, seed)
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        v = {"SDXL Realistic (best, open)": "sdxl_real",
-             "SDXL base (open)": "sdxl"}.get(variant, "sdxl_real")
+        v = {"Photoreal (recommended)": "sdxl_real",
+             "General purpose": "sdxl"}.get(variant, "sdxl_real")
         out = diffusion.run(prompt=prompt, variant=v, negative_prompt=negative,
                             width=int(width), height=int(height),
                             steps=int(steps), guidance=float(guidance),
@@ -425,8 +458,8 @@ def run_faceswap(source, mode, target_img, target_vid, enhancer,
     try:
         free_inprocess()
         faceswap.load()
-        e = {"GFPGAN (default)": "gfpgan",
-             "CodeFormer (non-commercial)": "codeformer",
+        e = {"Standard": "gfpgan",
+             "High detail": "codeformer",
              "None": "none"}.get(enhancer, "gfpgan")
         out = faceswap.run(source_path=source, target_path=target,
                            enhancer=e, is_video=is_video,
@@ -474,7 +507,7 @@ def run_ltx(image, prompt, negative, resolution, duration, fps, steps, guidance,
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        if image and not motion_engine.startswith("LTX 2.3"):
+        if image and not str(motion_engine).startswith("Synchronized audio"):
             out = motion.run(image_path=image, prompt=prompt,
                              negative_prompt=negative,
                              width=width, height=height,
@@ -574,6 +607,7 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
     gr.HTML(f"<script>{THEME_JS}</script>")
     gr.HTML(MASTHEAD)
     gr.HTML(ribbon_html())
+    gr.HTML(wave_html())
 
     with gr.Tabs() as tabs:
 
@@ -602,8 +636,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                         "extracted so you can compare.")
                     with gr.Row():
                         ed_method = gr.Radio(
-                            ["LatentSync (best)", "Wav2Lip (fast)"],
-                            value="LatentSync (best)", label="Lip-sync")
+                            ["Best quality", "Fast"],
+                            value="Best quality", label="Lip-sync")
                         ed_steps  = gr.Slider(10, 50, value=20, step=1,
                                               label="Diffusion steps")
                         ed_guid   = gr.Slider(1.0, 3.0, value=1.5, step=0.1,
@@ -692,14 +726,6 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
             gr.HTML(hero("ti-wave-sine", "Voice Editing & Cloning",
                 "Regenerate only the words you changed, conditioned on the "
                 "real recording \u2014 or speak new text in a cloned voice."))
-            gr.HTML(
-                "<div style='font-size:.84rem;color:var(--muted);"
-                "margin:-.4rem 0 .8rem'>ViiTorVoice-NAR (tier A, Apache-2.0). "
-                "Unlike phrase regeneration, this model hears the audio either "
-                "side of an edit, so the replacement already carries the "
-                "speaker&#39;s voice, room and level. <b>English only</b> in "
-                "this build. Needs <code>VIITOR</code> in Step 6 and "
-                "<code>viitor</code> in Step 7.</div>")
             with gr.Row():
                 vv_check = gr.Button("\u25d0  Check service status", size="sm")
                 vv_status_top = gr.HTML("")
@@ -790,17 +816,17 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
         # ── 03 Text → Image ─────────────────────────────────────────────────
         with gr.Tab("03 · Text → Image", id=1):
             gr.HTML(hero("ti-photo", "Text → Image",
-                "Generate photoreal images from a prompt (SDXL)."))
+                "Generate photoreal images from a prompt."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Prompt</div>")
                     ti_prompt = gr.Textbox(label="Prompt", lines=4,
                         placeholder="A cinematic portrait, golden hour, ultra-detailed…")
                     ti_variant = gr.Radio(
-                        ["SDXL Realistic (best, open)", "SDXL base (open)"],
-                        value="SDXL Realistic (best, open)",
+                        ["Photoreal (recommended)", "General purpose"],
+                        value="Photoreal (recommended)",
                         label="Model")
-                    ti_neg = gr.Textbox(label="Negative prompt (SDXL only)", lines=2,
+                    ti_neg = gr.Textbox(label="Negative prompt", lines=2,
                         placeholder="leave blank for the built-in quality default")
                     with gr.Row():
                         ti_w = gr.Slider(512, 1536, value=1024, step=64, label="Width")
@@ -836,10 +862,11 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     fs_tvid = gr.Video(label="Target video (paste INTO every frame)",
                                        visible=False, elem_classes=["output-media"])
                     fs_enh  = gr.Radio(
-                        ["GFPGAN (default)", "CodeFormer (non-commercial)", "None"],
-                        value="GFPGAN (default)",
-                        label="Face enhancer  (CodeFormer = sharper, image-only, "
-                              "S-Lab non-commercial license)")
+                        ["Standard", "High detail", "None"],
+                        value="Standard",
+                        label="Face enhancer",
+                        info="High detail is sharper but image-only, and is "
+                             "licensed for non-commercial use.")
                     fs_btn  = gr.Button("▶  Swap Face", variant="primary")
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Output</div>")
@@ -852,26 +879,28 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                          [fs_src, fs_mode, fs_timg, fs_tvid, fs_enh],
                          [fs_oimg, fs_ovid, fs_status])
 
-        # ── 05 Text → Video (LTX-2.3 text-only+audio · Wan2.2-I2V/LTX-2.3 w/ a photo)
+        # ── 05 Text → Video (prompt-only + audio · or animate a photo)
         with gr.Tab("05 · Text → Video", id=3):
             gr.HTML(hero("ti-movie", "Text → Video",
-                "Prompt → video with synchronized audio (LTX-2.3). Add a "
-                "reference photo to animate it instead — identity-preserving "
-                "motion video. Optionally pair your own audio as the soundtrack."))
+                "Prompt → video with synchronized audio. Add a reference "
+                "photo to animate it instead — identity-preserving motion "
+                "video. Optionally pair your own audio as the soundtrack."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>LTX-2.3 (open · needs the "
-                            "optional venv_ltx2) generates prompt-only video with "
-                            "its own audio. With a photo, pick a motion engine below "
-                            "(Wan2.2-I2V needs the optional venv_wan). Resolution/"
-                            "duration/fps are shared across all modes.</div>")
+                    gr.HTML("<div class='section-label'>Prompt → Video</div>")
+                    gr.HTML("<div style='font-size:.82rem;color:var(--muted);"
+                            "margin:-.6rem 0 .8rem'>A prompt alone produces "
+                            "video with its own synchronized audio. Add a photo "
+                            "and pick a motion engine below. Resolution, "
+                            "duration and fps are shared across all modes. Both "
+                            "video engines are optional builds.</div>")
                     lx_img = gr.Image(label="Reference photo (optional) — animate "
                         "this instead of generating from scratch", type="filepath",
                         elem_classes=["output-media"])
                     lx_engine = gr.Radio(
-                        ["Wan2.2-I2V (best identity/multi-subject)",
-                         "LTX 2.3 (faster, adds synchronized audio)"],
-                        value="Wan2.2-I2V (best identity/multi-subject)",
+                        ["Identity-preserving (best for people)",
+                         "Synchronized audio (faster, adds a soundtrack)"],
+                        value="Identity-preserving (best for people)",
                         label="Motion-video engine (used only when a photo is given)")
                     lx_audio = gr.Audio(label="Reference audio (optional) — paired "
                         "as this video's soundtrack; does NOT influence the "
@@ -892,9 +921,9 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                   "same duration, so more compute & time")
                     with gr.Row():
                         lx_steps  = gr.Slider(10, 50, value=40, step=1,
-                                              label="Steps (LTX 2.3)")
+                                              label="Steps (audio engine)")
                         lx_guid   = gr.Slider(1.0, 5.0, value=1.0, step=0.5,
-                                              label="Guidance (Wan2.2-I2V only)")
+                                              label="Guidance (identity engine only)")
                     lx_btn = gr.Button("▶  Generate Video", variant="primary")
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Output</div>")
@@ -912,9 +941,11 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                 "objects, or combine multiple references (e.g. person + product)."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
-                    gr.HTML("<div class='section-label'>Instruction editing "
-                            "(Qwen-Image-Edit-2509 · open, no token · needs the "
-                            "optional venv_qwen)</div>")
+                    gr.HTML("<div class='section-label'>Instruction "
+                            "Editing</div>")
+                    gr.HTML("<div style='font-size:.82rem;color:var(--muted);"
+                            "margin:-.6rem 0 .8rem'>Describe the change in "
+                            "plain language. Optional build.</div>")
                     ie_img = gr.Files(label="Image(s) to edit — 1-3 references "
                         "(e.g. person + product, person + scene)",
                         file_count="multiple")

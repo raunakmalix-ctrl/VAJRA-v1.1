@@ -204,12 +204,15 @@ body,.gradio-container{
 
 /* ── Section labels (custom) ──────────────────────────────────────────── */
 .section-label{font-family:'Rajdhani',sans-serif!important; font-weight:700!important;
-  font-size:.68rem!important; letter-spacing:.16em!important; text-transform:uppercase!important;
+  font-size:.86rem!important; letter-spacing:.14em!important; text-transform:uppercase!important;
   color:var(--label)!important; margin-bottom:14px!important;
-  display:flex!important; align-items:center!important; gap:9px!important;}
-.section-label::before{content:''; width:16px; height:3px; background:var(--amber); flex:0 0 auto;}
-.section-label::after{content:''; flex:1; height:1px;
-  background:linear-gradient(90deg,var(--border-strong),transparent);}
+  display:flex!important; align-items:center!important; gap:12px!important;
+  justify-content:center!important; text-align:center!important;}
+/* Rules on both sides so the heading reads as centred rather than left-hung.
+   Same element on every tab, so this is the one place that sets the standard. */
+.section-label::before,.section-label::after{content:''; flex:1; height:1px;
+  background:linear-gradient(90deg,transparent,var(--border-strong));}
+.section-label::after{background:linear-gradient(90deg,var(--border-strong),transparent);}
 
 /* ── Form controls ────────────────────────────────────────────────────── */
 label,.gr-label,.block-title,span[data-testid="block-info"]{
@@ -312,6 +315,32 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
 .tab-nav button i.ti{font-size:1rem; margin-right:8px; vertical-align:-2px;}
 
 /* ── Status ribbon (under the tab bar) ────────────────────────────────── */
+/* ── Waveform strip ──────────────────────────────────────────────────────
+   Ambient signal bar under the header. Pure CSS: a row of bars each with its
+   own delay, under a sweep that travels left to right. No JS and no timers, so
+   it costs nothing and cannot fall out of sync with anything. */
+.vj-wave{position:relative; display:flex; align-items:flex-end; gap:2px;
+  height:34px; margin:10px 4px 0; padding:0 10px; overflow:hidden;
+  background:var(--navy-deep); border-radius:var(--radius);
+  border:1px solid var(--border);}
+.vj-wave .vw-bar{flex:1 1 auto; min-width:2px; border-radius:1px;
+  background:linear-gradient(180deg,var(--amber),var(--amber-deep));
+  opacity:.55; animation:vjWave 1.5s ease-in-out infinite alternate;
+  transform-origin:bottom;}
+.vj-wave::after{content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(90deg,transparent 0%,
+    rgba(245,166,35,.00) 35%, rgba(245,166,35,.22) 50%,
+    rgba(245,166,35,.00) 65%, transparent 100%);
+  background-size:220% 100%; animation:vjSweep 4.5s linear infinite;}
+.vj-wave::before{content:''; position:absolute; left:0; right:0; top:50%;
+  height:1px; background:rgba(245,166,35,.18);}
+@keyframes vjWave{from{height:12%;} to{height:92%;}}
+@keyframes vjSweep{from{background-position:120% 0;} to{background-position:-120% 0;}}
+@media (prefers-reduced-motion:reduce){
+  .vj-wave .vw-bar{animation:none; height:45%;}
+  .vj-wave::after{animation:none;}
+}
+
 .status-ribbon{display:flex; align-items:center; gap:18px; flex-wrap:wrap;
   background:var(--card); border:1px solid var(--border);
   border-left:4px solid var(--amber); border-radius:var(--radius);
@@ -338,9 +367,13 @@ button.secondary:hover{background:var(--navy)!important; color:#fff!important;}
   background:var(--navy); color:var(--amber); display:flex; align-items:center;
   justify-content:center; font-size:1.35rem; box-shadow:var(--shadow-sm);}
 .tab-hero .th-txt{display:flex; flex-direction:column; gap:1px;}
-.tab-hero .th-title{font-family:'Oswald',sans-serif; font-weight:600;
-  font-size:1.12rem; letter-spacing:.04em; color:var(--navy); text-transform:uppercase;}
-:root[data-theme="dark"] .tab-hero .th-title{color:var(--amber);}
+/* --label rather than a dark-mode override: the override only fires when the
+   root actually carries data-theme="dark", so any other route into dark mode
+   left this navy and invisible. One token that is correct in both themes cannot
+   be missed that way. */
+.tab-hero .th-title{font-family:'Oswald',sans-serif; font-weight:700;
+  font-size:1.2rem; letter-spacing:.05em; color:var(--label);
+  text-transform:uppercase;}
 .tab-hero .th-sub{font-family:'Inter',sans-serif; font-size:.86rem; color:var(--muted);}
 
 /* ── Empty-state for output media ─────────────────────────────────────── */
