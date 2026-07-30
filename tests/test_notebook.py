@@ -101,6 +101,25 @@ unknown = offered - valid
 check("notebook offers no target the dispatcher rejects",
       not unknown, f"unknown: {sorted(unknown)}" if unknown else "")
 
+print()
+print("=" * 74)
+print("notebook — the checkout is pinned to a branch")
+print("=" * 74)
+# Cloning the default branch fetches main, which lacks the VAJRA 2.0 packages
+# and ships an older setup script that ignores build targets. That failure is
+# silent -- the wrong code runs and looks fine -- so the branch must be explicit.
+clone_cell = next((("".join(c["source"])) for _, c in code_cells
+                   if "git clone" in "".join(c["source"])), "")
+check("clone cell found", bool(clone_cell))
+check("a branch is named explicitly", "BRANCH" in clone_cell)
+check("clone pins the branch", "--branch $BRANCH" in clone_cell,
+      "a bare `git clone` takes the repo default branch")
+check("an existing checkout is updated, not left stale",
+      "pull" in clone_cell and "fetch origin" in clone_cell)
+for pkg in ("core/router.py", "evaluation/scorecard.py", "dsp/match.py"):
+    check(f"{pkg} exists on the pinned branch",
+          os.path.exists(os.path.join(_ROOT, pkg)))
+
 print("=" * 74)
 if FAILS:
     print(f"{len(FAILS)} FAILURE(S):")
