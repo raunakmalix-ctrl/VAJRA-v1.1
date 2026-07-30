@@ -199,3 +199,55 @@ def frame_energy_db(x, sr, frame_ms=20.0, hop_ms=10.0):
     frames = a[idx]
     e = np.sqrt(np.mean(np.square(frames.astype(np.float64)), axis=1) + EPS)
     return (20.0 * np.log10(e)).astype(np.float32), starts
+
+
+def trim_silence(x, sr, floor_offset_db=12.0, keep_ms=30.0, min_keep_frac=0.25):
+    """Strip leading/trailing near-silence, keeping a short natural margin.
+
+    Synthesisers commonly pad their output with silence. That padding is not
+    speech, but it counts toward the clip's duration -- so a span that would
+    comfortably fit its slot can appear far too long, and get needlessly widened
+    or escalated to a whole-line re-voice. Measure the speech, not the padding.
+
+    Conservative by construction: the threshold is relative to the clip's own
+    quiet level, a `keep_ms` margin is left at each end so nothing is clipped
+    off an onset, and the function declines rather than return an implausibly
+    small result (`min_keep_frac`) when the clip has no clear silence to trim.
+    """
+    a = as_float32(x)
+    n = a.shape[0]
+    if n < int(sr * 0.05):
+        return a, {"trimmed": False, "reason": "too short to measure"}
+
+    e, starts = frame_energy_db(to_mono(a), sr, frame_ms=20.0, hop_ms=10.0)
+    finite = e[np.isfinite(e)]
+    if finite.size < 4:
+        return a, {"trimmed": False, "reason": "not enough frames"}
+
+    quiet = float(np.percentile(finite, 5.0))
+    loud = float(np.percentile(finite, 95.0))
+    if loud - quiet < 6.0:
+        # No meaningful contrast: either all speech or all silence. Either way
+        # trimming would be guesswork.
+        return a, {"trimmed": False, "reason": "no clear silence"}
+
+    thresh = quiet + float(floor_offset_db)
+    voiced = np.where(e >= thresh)[0]
+    if voiced.size == 0:
+        return a, {"trimmed": False, "reason": "nothing above the threshold"}
+
+    keep = int(sr * float(keep_ms) / 1000.0)
+    lo = max(0, int(starts[voiced[0]]) - keep)
+    hi = min(n, int(starts[voiced[-1]]) + int(sr * 0.02) + keep)
+    if hi - lo < int(min_keep_frac * n) or hi <= lo:
+        return a, {"trimmed": False, "reason": "would remove too much"}
+
+    if lo == 0 and hi == n:
+        return a, {"trimmed": False, "reason": "nothing to trim"}
+
+    return a[lo:hi], {
+        "trimmed": True,
+        "removed_lead_sec": round(lo / float(sr), 3),
+        "removed_tail_sec": round((n - hi) / float(sr), 3),
+        "result_sec": round((hi - lo) / float(sr), 3),
+    }

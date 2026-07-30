@@ -84,9 +84,16 @@ _calls = {"n": 0}
 
 
 class StubVoice:
+    # Duration tracks the text, as a real synthesiser's does. A fixed-length
+    # stub would make every short span look impossible to fit and send the
+    # engine down the whole-line re-voice path, testing the wrong branch.
+    SEC_PER_WORD = 0.34
+
     def run(self, text, reference_audio_path, language="en", **kw):
         _calls["n"] += 1
-        span = synth(1.30, f0=155.0, sr=SR, seed=100 + _calls["n"])
+        n_words = max(1, len((text or "").split()))
+        span = synth(n_words * self.SEC_PER_WORD, f0=155.0, sr=SR,
+                     seed=100 + _calls["n"])
         span = (span - span.mean()).astype(np.float32)
         # strip the noise floor to mimic TTS output, then over-drive the level
         from scipy.signal import butter, lfilter as lf
@@ -331,6 +338,20 @@ check("cap advice present", "advice" in d5)
 t5, _ = dsp.load(out_audio["path"], mono=True)
 check("length preserved even when capped", abs(t5.size - orig.size) <= 1,
       f"{t5.size} vs {orig.size}")
+
+# The reported regression: a replacement too long for its slot used to be cut
+# off mid-phrase, after which the ORIGINAL words resumed -- so the listener
+# heard the new wording AND the old. It must now either absorb neighbouring
+# silence or be re-voiced as a whole line, and say which.
+r5 = st5["match_reports"][0]
+check("an unfittable span is not silently truncated",
+      bool(r5.get("escalated")) or (r5.get("widened_sec") or 0) > 0,
+      f"escalated={r5.get('escalated')} widened={r5.get('widened_sec')}")
+check("escalation re-voices the whole line, not the fragment",
+      r5.get("granularity") == "segment" if r5.get("escalated") else True,
+      str(r5.get("granularity")))
+check("escalation is visible in the report, not just the log",
+      "escalated" in r5)
 
 print()
 print("=" * 74)

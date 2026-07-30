@@ -71,6 +71,54 @@ def _extract_audio(video_path):
     return out
 
 
+# A shortfall smaller than this is absorbed by time-compression without being
+# noticeable; beyond it, the span is re-voiced as a whole line rather than cut.
+_ESCALATE_SEC = 0.12
+
+
+def _widen_to_fit(need_samples, start, end, sr, span_meta, max_stretch, n):
+    """Grow [start, end] into neighbouring silence so `need_samples` fits.
+
+    Returns (start, end, info). The span may only grow as far as `slack_start`
+    and `slack_end` -- the gaps either side, which stop at the neighbouring
+    words. Growing past those would delete a word the user did not edit.
+
+    Time-compression covers the rest: a span may be shortened by up to
+    `max_stretch`, so the slot only has to reach need/(1+max_stretch).
+    """
+    span = end - start
+    # The shortest slot this audio can honestly be squeezed into.
+    required = int(need_samples / (1.0 + float(max_stretch)))
+    info = {"widened_sec": 0.0, "short_sec": 0.0,
+            "slot_sec": round(span / float(sr), 3),
+            "needed_sec": round(required / float(sr), 3)}
+    if required <= span:
+        return start, end, info
+
+    lo_limit = start
+    hi_limit = end
+    if span_meta.get("slack_start") is not None:
+        lo_limit = max(0, min(start, int(round(
+            float(span_meta["slack_start"]) * sr))))
+    if span_meta.get("slack_end") is not None:
+        hi_limit = min(n, max(end, int(round(
+            float(span_meta["slack_end"]) * sr))))
+
+    deficit = required - span
+    # Take from the trailing gap first: a phrase runs into the pause after it
+    # far more naturally than it starts early into the one before.
+    take_end = min(deficit, hi_limit - end)
+    end += take_end
+    deficit -= take_end
+    take_start = min(deficit, start - lo_limit)
+    start -= take_start
+    deficit -= take_start
+
+    info["widened_sec"] = round((take_end + take_start) / float(sr), 3)
+    info["short_sec"] = round(max(0, deficit) / float(sr), 3)
+    return start, end, info
+
+
 class TranscriptEngine(BaseEngine):
 
     def __init__(self):
@@ -336,8 +384,16 @@ class TranscriptEngine(BaseEngine):
         stretch = (dsp.DEFAULT_MAX_STRETCH if max_stretch is None
                    else float(max_stretch))
         reports = []
+        # Lines re-voiced whole because a span would not fit. The whole-line
+        # take already contains every edit on that line, so any remaining span
+        # for it would splice the same words in a second time.
+        escalated = set()
 
         for k, (i, start, end, new_text, span_meta) in enumerate(edits):
+            if i in escalated:
+                print(f"[Transcript] edit {k+1}: covered by the whole-line "
+                      f"re-voice of segment {i+1} — skipping")
+                continue
             if progress is not None:
                 progress(k / max(len(edits), 1),
                          desc=f"Re-voicing edit {k+1}/{len(edits)}")
@@ -352,6 +408,47 @@ class TranscriptEngine(BaseEngine):
             )
             span, span_sr = dsp.load(clip_wav, mono=True)
             span = dsp.resample(span, span_sr, sr)
+            # Synthesisers pad their output with silence. That padding is not
+            # speech but still counts toward the clip's length, so leaving it on
+            # would make a span look too long for its slot and trigger a widen
+            # or a whole-line re-voice that the actual speech never needed.
+            span, trim_info = dsp.trim_silence(span, sr)
+
+            # A word-level slot is only as long as the words it replaces, so a
+            # replacement with more syllables does not fit. Truncating it is the
+            # worst option available: the listener hears the start of the new
+            # wording and then the ORIGINAL words resuming. Grow the slot into
+            # the neighbouring silence first -- the word timings say exactly how
+            # much there is, and it is what a human editor would use.
+            start, end, widen = _widen_to_fit(
+                span.shape[0], start, end, sr, span_meta, stretch, n)
+            if widen["widened_sec"]:
+                print(f"[Transcript] edit {k+1}: absorbed "
+                      f"{widen['widened_sec']:.2f}s of neighbouring silence so "
+                      f"the new wording fits without being cut")
+
+            # Still too long even with the silence: re-speak the WHOLE line
+            # instead. A fully synthetic line is a real cost, but it is coherent,
+            # whereas a truncated span is audibly broken. Reported either way.
+            if widen["short_sec"] > _ESCALATE_SEC and span_meta.get(
+                    "granularity") == "word":
+                seg = segments[i]
+                whole_text = new_lines[i] if i < len(new_lines) else seg["text"]
+                print(f"[Transcript] edit {k+1}: {widen['short_sec']:.2f}s too "
+                      f"long even after absorbing silence — re-voicing the "
+                      f"whole line so nothing is cut mid-phrase")
+                clip_wav = self.voice.run(
+                    text=whole_text, reference_audio_path=ref_path,
+                    language=decision.get("synthesis_language")
+                             or state.get("synthesis_language") or "en",
+                )
+                span, span_sr = dsp.load(clip_wav, mono=True)
+                span = dsp.resample(span, span_sr, sr)
+                start, end = _clamp(seg["start"]), _clamp(seg["end"])
+                new_text = whole_text
+                span_meta = dict(span_meta, granularity="segment",
+                                 escalated=True)
+                escalated.add(i)
 
             if realism:
                 track, rep = dsp.match_and_splice(
@@ -369,6 +466,8 @@ class TranscriptEngine(BaseEngine):
             rep["granularity"] = span_meta.get("granularity")
             rep["orig_text"] = span_meta.get("orig_text")
             rep["span_expanded"] = span_meta.get("expanded")
+            rep["escalated"] = bool(span_meta.get("escalated"))
+            rep["widened_sec"] = widen.get("widened_sec", 0.0)
             # Tone was harvested once up front, so match_and_splice never saw a
             # None to fill in -- record it here to keep each report complete.
             rep.setdefault("room_tone", tone_info)

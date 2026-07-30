@@ -32,7 +32,7 @@ principal runtime alongside everything else.
 """
 from dsp.audio import (load, save, as_float32, to_mono, apply_gain,
                        limit_peak, resample, rms_db, peak, fade, pad_or_trim,
-                       frame_energy_db)
+                       frame_energy_db, trim_silence)
 from dsp.loudness import (measure_lufs, measure_loudness_db, match_loudness,
                           loudness_delta_db)
 from dsp.spectral import (match_spectrum, correction_curve_db,
@@ -51,6 +51,7 @@ __all__ = [
     # audio
     "load", "save", "as_float32", "to_mono", "apply_gain", "limit_peak", "resample",
     "rms_db", "peak", "fade", "pad_or_trim", "frame_energy_db",
+    "trim_silence",
     # loudness
     "measure_lufs", "measure_loudness_db", "match_loudness",
     "loudness_delta_db",

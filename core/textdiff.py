@@ -151,6 +151,10 @@ def resolve_edit_spans(seg, new_text, min_gap_sec=DEFAULT_MIN_GAP_SEC,
 
     Returns a list of span dicts:
         {'t_start','t_end'      audio range to replace (seconds, absolute)
+         'slack_start','slack_end'
+                                how far that range may grow before it would
+                                swallow a neighbouring word -- the silence a
+                                longer replacement is allowed to absorb
          'text'                 what the synthesiser should say for that range
          'orig_text'            what it currently says
          'word_start','word_end' token indices covered
@@ -172,6 +176,9 @@ def resolve_edit_spans(seg, new_text, min_gap_sec=DEFAULT_MIN_GAP_SEC,
     def _whole():
         return [{
             "t_start": seg_start, "t_end": seg_end,
+            # A whole-segment span already spans its line, so its only slack is
+            # the line itself. Present on every span so callers never special-case.
+            "slack_start": seg_start, "slack_end": seg_end,
             "text": new_text, "orig_text": orig_text,
             "word_start": None, "word_end": None,
             "granularity": "segment", "expanded": False,
@@ -218,9 +225,20 @@ def resolve_edit_spans(seg, new_text, min_gap_sec=DEFAULT_MIN_GAP_SEC,
         if not span_tokens:
             continue
 
+        # How far the span may grow WITHOUT swallowing a neighbouring word.
+        # A word-level span is only as long as the words it replaces, so a
+        # replacement with more syllables cannot fit and would be truncated
+        # mid-phrase -- leaving the listener hearing part of the new wording
+        # followed by the old words. The gaps either side are the room a human
+        # editor would use, and the word timings already tell us where they are.
+        slack_start = (float(words[lo - 1]["end"]) if lo > 0 else seg_start)
+        slack_end = (float(words[hi]["start"]) if hi < len(words) else seg_end)
+
         spans.append({
             "t_start": max(seg_start, float(words[lo]["start"])),
             "t_end": min(seg_end, float(words[hi - 1]["end"])),
+            "slack_start": max(seg_start, slack_start),
+            "slack_end": min(seg_end, slack_end),
             "text": " ".join(span_tokens),
             "orig_text": " ".join(orig_tokens[lo:hi]),
             "word_start": lo, "word_end": hi,
@@ -237,6 +255,8 @@ def resolve_edit_spans(seg, new_text, min_gap_sec=DEFAULT_MIN_GAP_SEC,
         if s["t_start"] <= out[-1]["t_end"]:
             prev = out[-1]
             prev["t_end"] = max(prev["t_end"], s["t_end"])
+            prev["slack_start"] = min(prev["slack_start"], s["slack_start"])
+            prev["slack_end"] = max(prev["slack_end"], s["slack_end"])
             prev["text"] = prev["text"] + " " + s["text"]
             prev["orig_text"] = prev["orig_text"] + " " + s["orig_text"]
             prev["word_end"] = max(prev["word_end"] or 0, s["word_end"] or 0)
