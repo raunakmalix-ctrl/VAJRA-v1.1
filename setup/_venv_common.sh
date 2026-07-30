@@ -80,6 +80,25 @@ ensure_py312() {
   echo "    using $PY312"
 }
 
+# require_disk_gb <gb> <what>
+# Several of these environments are multi-gigabyte. Running out of disk halfway
+# through leaves a venv that LOOKS built -- make_venv skips anything with a
+# bin/python -- so the next run silently uses a broken environment. Checking
+# first turns that into one clear message before anything is downloaded.
+require_disk_gb() {
+  local need="$1" what="${2:-this environment}"
+  local avail
+  avail="$(df -Pk "$VENVS" 2>/dev/null | awk 'NR==2 {print int($4/1048576)}')"
+  [ -n "$avail" ] || return 0          # cannot measure: do not block the build
+  if [ "$avail" -lt "$need" ]; then
+    echo "!! Not enough disk for $what: ${avail}GB free, ~${need}GB needed." >&2
+    echo "   Free space, or set USE_DRIVE=True to move model weights off this" >&2
+    echo "   disk, or build fewer environments in one session." >&2
+    return 1
+  fi
+  echo "    disk: ${avail}GB free (~${need}GB needed)"
+}
+
 # make_venv <name> <interpreter>
 make_venv() {
   local name="$1" interp="$2"

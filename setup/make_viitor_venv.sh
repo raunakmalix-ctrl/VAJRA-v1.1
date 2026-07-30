@@ -16,6 +16,10 @@ set -e
 source "$(cd "$(dirname "$0")" && pwd)/_venv_common.sh"
 
 echo "==> venv_viitor (ViiTorVoice-NAR local speech infill)"
+# torch 2.8+cu128 alone brings ~8 nvidia CUDA libraries, and ONNX Runtime GPU
+# and TensorRT sit on top of that. The weights are a further ~12GB, but those go
+# to MODEL_ROOT and can live on Drive; this figure is the environment only.
+require_disk_gb 14 "venv_viitor (torch cu128 + ONNX Runtime + TensorRT)"
 ensure_py312
 
 REPO_DIR="$TP/viitor-voice-nar"
