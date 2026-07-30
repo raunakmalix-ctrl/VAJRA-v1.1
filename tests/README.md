@@ -11,7 +11,10 @@ python tests/test_vision.py              # 93 assertions on masks and windowing
 python tests/test_relip_integration.py   # 49 assertions on the relip flow
 python tests/test_router_scorecard.py    # 74 assertions on routing + metrics
 python tests/test_app_ui.py              # 15 assertions on the UI report panels
-python tests/test_notebook.py            # 15 assertions on the Colab notebook
+python tests/test_notebook.py            # 23 assertions on the Colab notebook
+python tests/test_setup_scripts.py       # 45 assertions on the env builders
+python tests/test_fit_regression.py      # 21 assertions on never truncating
+python tests/test_viitor.py              # 46 assertions on tier A routing + HTTP
 ```
 
 What each one is actually for:
@@ -39,6 +42,17 @@ What each one is actually for:
   the Edit & Relip report panels from real `core.router` / `evaluation.scorecard`
   payloads. A renamed dict key would otherwise pass every other check here and
   fail only on a GPU.
+- **`test_fit_regression.py`** — that a replacement is never cut off
+  mid-phrase. It grows into neighbouring silence, or the whole line is re-voiced;
+  truncation, which made an edit sound like the new wording followed by the old
+  words, is never an outcome.
+- **`test_viitor.py`** — that tier A is only promised when the environment, the
+  repo and the weights are all present; that a tier the operator requests is
+  honoured or explained; and that the multipart body matches the documented API
+  field names. No service runs here.
+- **`test_setup_scripts.py`** — that no environment builder touches system pip
+  or apt outside the shared lock. The race it guards needs three parallel builds
+  on a clean machine to reproduce, so it is checked statically instead.
 - **`test_notebook.py`** — parses every code cell in the Colab notebook and
   checks the Step 6 flags against the build dispatcher's target list. A string
   literal split across two cell lines is invisible in a diff and fails minutes
@@ -51,5 +65,7 @@ back to RMS matching and the tests still pass.
 ## What these tests do NOT cover
 
 Every path that needs a GPU or real weights: Demucs' `apply_model`, the ffmpeg
-cut/composite path in windowed lip-sync, and real LatentSync/XTTS calls. Those
-are stubbed here and remain unvalidated until a GPU session runs them.
+cut/composite path in windowed lip-sync, real LatentSync/XTTS calls, and — the
+largest gap — whether ViiTorVoice's five-service group actually starts and
+returns good audio. Those are stubbed here and remain unvalidated until a GPU
+session runs them.

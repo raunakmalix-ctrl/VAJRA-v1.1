@@ -47,6 +47,7 @@ ltx2        = ENGINES["ltx2"]
 media       = ENGINES["media"]
 motion      = ENGINES["motion"]
 qwen_edit   = ENGINES["qwen_edit"]
+viitor      = ENGINES["viitor"]
 
 
 # ── GPU helpers ─────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ def ribbon_html():
         "<span class='sr-item'><span class='sr-dot'></span><b class='sr-live'>ONLINE</b></span>"
         "<span class='sr-item'><i class='ti ti-shield-lock'></i>100% OFFLINE / LOCAL</span>"
         f"<span class='sr-item'><i class='ti ti-cpu'></i>Compute&nbsp;<b>{dev}</b></span>"
-        "<span class='sr-item'><i class='ti ti-stack-2'></i><b>6</b>&nbsp;Modules</span>"
+        "<span class='sr-item'><i class='ti ti-stack-2'></i><b>7</b>&nbsp;Modules</span>"
         "</div>"
     )
 
@@ -108,6 +109,19 @@ def err(msg):
         traceback.print_exc()
     return f"<span class='status-err'>✖ {msg}</span>"
 def warn(msg): return f"<span class='status-warn'>⚠ {msg}</span>"
+
+
+def _engine_availability():
+    """What is ACTUALLY built right now, for the router to reason with.
+
+    Probed per call rather than cached: an environment can be built between two
+    clicks in the same session, and a stale 'not installed' would keep the
+    operator on a lower tier with no way to see why.
+    """
+    from core.config import VENV_VOICE_PY
+    from engines import viitor_engine
+    return {"xtts": os.path.exists(VENV_VOICE_PY),
+            "viitor_nar": viitor_engine.available()}
 
 
 # ── Feature: Transcript edit + relip ─────────────────────────────────────────
@@ -199,7 +213,8 @@ def _capability_html():
     language, so the operator has to be able to see that before recording."""
     from core import router
     rows = []
-    for lang, info in sorted(router.capability_table().items()):
+    for lang, info in sorted(
+            router.capability_table(available=_engine_availability()).items()):
         col = _TIER_COLOUR.get(info["tier"], "var(--muted)")
         gap = ("" if info["best_possible_tier"] == info["tier"]
                else f"<span style='color:var(--muted)'> → {info['best_possible_tier']} "
@@ -237,12 +252,11 @@ def do_extract(video, allow_nc=False, progress=gr.Progress()):
         # Preview the routing decision now, so the operator learns what quality
         # this language can reach BEFORE spending GPU time on the edit.
         from core import router
-        from core.config import VENV_VOICE_PY
         preview = router.resolve(
             state.get("language", "en"),
             has_word_timings=state.get("has_word_timings", False),
             allow_nc=bool(allow_nc),
-            available={"xtts": os.path.exists(VENV_VOICE_PY)},
+            available=_engine_availability(),
         )
         # Same text into both panes: the left one is the untouched reference to
         # compare against, the right one is what the operator edits.
@@ -259,7 +273,7 @@ def do_extract(video, allow_nc=False, progress=gr.Progress()):
 def do_relip(state, edited_text, method, steps, guidance,
              realism=True, word_level=True, separate="auto",
              windowed=True, allow_nc=False, max_stretch=0.15,
-             progress=gr.Progress()):
+             tier="Auto (best available)", progress=gr.Progress()):
     if not state:
         return None, None, warn("Extract a transcript first"), ""
     if not edited_text or not edited_text.strip():
@@ -279,6 +293,10 @@ def do_relip(state, edited_text, method, steps, guidance,
             separate=sep_map.get(separate, "auto"),
             windowed_lipsync=bool(windowed), allow_nc=bool(allow_nc),
             max_stretch=float(max_stretch),
+            # "Auto" means no preference; anything else is a request the router
+            # honours where it can and reports where it cannot.
+            prefer_tier=(None if str(tier).startswith("Auto")
+                         else str(tier).strip()[0]),
             progress=progress,
         )
         return (out, state.get("edited_audio"), ok(os.path.basename(out)),
@@ -291,6 +309,80 @@ def do_relip(state, edited_text, method, steps, guidance,
                 err(str(e)), _relip_report(state or {}))
     finally:
         GPU_LOCK.release()
+
+
+# -- Feature: Voice editing & cloning (ViiTorVoice-NAR, tier A) --------------
+def _viitor_guard():
+    """Say precisely what is missing, rather than just refusing."""
+    from engines import viitor_engine
+    if not viitor_engine.available():
+        return viitor_engine._unavailable_message()
+    return None
+
+
+def do_voice_edit(audio, original_text, edited_text, mask_ratio,
+                  granularity, progress=gr.Progress()):
+    """Regenerate only the changed words, in place, inside the real recording."""
+    gap = _viitor_guard()
+    if gap:
+        return None, warn(gap)
+    if audio is None:
+        return None, warn("Upload the audio to edit first")
+    if not (original_text or "").strip():
+        return None, warn("The original transcript is required - the model "
+                          "aligns it against the audio to locate the change")
+    if not (edited_text or "").strip():
+        return None, warn("Enter the edited text")
+    GPU_LOCK.acquire()
+    try:
+        free_inprocess()
+        progress(0.1, desc="Contacting ViiTorVoice ...")
+        out = viitor.local_edit(
+            source_audio_path=audio, original_text=original_text,
+            edited_text=edited_text,
+            align_granularity=("word" if str(granularity).startswith("Word")
+                               else "segment"),
+            expand_mask_ratio=float(mask_ratio), progress=progress,
+        )
+        return out, ok(os.path.basename(out))
+    except Exception as e:
+        return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
+
+
+def do_voice_clone(ref_audio, text, emotion, nvv, progress=gr.Progress()):
+    """Speak new text in the voice of a reference clip."""
+    gap = _viitor_guard()
+    if gap:
+        return None, warn(gap)
+    if ref_audio is None:
+        return None, warn("Upload a reference voice clip first")
+    if not (text or "").strip():
+        return None, warn("Enter the text to speak")
+    GPU_LOCK.acquire()
+    try:
+        free_inprocess()
+        progress(0.1, desc="Contacting ViiTorVoice ...")
+        out = viitor.clone(
+            ref_audio_path=ref_audio, text=text,
+            emotion_guidance_scale=float(emotion),
+            nvv_guidance_scale=float(nvv), progress=progress,
+        )
+        return out, ok(os.path.basename(out))
+    except Exception as e:
+        return None, err(str(e))
+    finally:
+        GPU_LOCK.release()
+
+
+def do_viitor_status():
+    gap = _viitor_guard()
+    if gap:
+        return warn(gap)
+    return (ok("service is up and answering") if viitor.is_running()
+            else warn("installed but not started - it starts on the first "
+                      "request, which takes a few minutes"))
 
 
 # ── Feature: Text → image ────────────────────────────────────────────────────
@@ -557,6 +649,20 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                 info="How far a regenerated span may be stretched to "
                                      "fit its slot before the edit is flagged "
                                      "instead. Beyond ~15% becomes audible.")
+                            ed_tier = gr.Dropdown(
+                                ["Auto (best available)",
+                                 "A — infill: regenerate only the changed words",
+                                 "B — infill, non-commercial engine",
+                                 "C — regenerate a pause-bounded phrase",
+                                 "D — regenerate the whole transcript line"],
+                                value="Auto (best available)",
+                                label="Quality tier",
+                                info="A request, not a command: a tier this "
+                                     "language and install cannot deliver falls "
+                                     "back and says so. Choosing a LOWER tier "
+                                     "is honoured exactly — that is how you A/B "
+                                     "infill against phrase regeneration.")
+                        with gr.Row():
                             ed_nc = gr.Checkbox(
                                 value=False,
                                 label="Allow non-commercial engines",
@@ -587,11 +693,101 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
             ed_relip.click(do_relip,
                            [ed_state, ed_text, ed_method, ed_steps, ed_guid,
                             ed_realism, ed_word, ed_sep, ed_windowed, ed_nc,
-                            ed_stretch],
+                            ed_stretch, ed_tier],
                            [ed_out, ed_new_audio, ed_status, ed_report])
 
-        # ── 02 Text → Image ─────────────────────────────────────────────────
-        with gr.Tab("02 · Text → Image", id=1):
+        # -- 02 Voice Editing & Cloning --------------------------------------
+        with gr.Tab("02 \u00b7 Voice Editing & Cloning", id=6):
+            gr.HTML(hero("ti-wave-sine", "Voice Editing & Cloning",
+                "Regenerate only the words you changed, conditioned on the "
+                "real recording \u2014 or speak new text in a cloned voice."))
+            gr.HTML(
+                "<div style='font-size:.84rem;color:var(--muted);"
+                "margin:-.4rem 0 .8rem'>ViiTorVoice-NAR (tier A, Apache-2.0). "
+                "Unlike phrase regeneration, this model hears the audio either "
+                "side of an edit, so the replacement already carries the "
+                "speaker&#39;s voice, room and level. <b>English only</b> in "
+                "this build. Needs <code>VIITOR</code> in Step 6 and "
+                "<code>viitor</code> in Step 7.</div>")
+            with gr.Row():
+                vv_check = gr.Button("\u25d0  Check service status", size="sm")
+                vv_status_top = gr.HTML("")
+            vv_check.click(do_viitor_status, [], [vv_status_top])
+
+            with gr.Tabs():
+                with gr.Tab("Voice Edit"):
+                    with gr.Row(equal_height=False):
+                        with gr.Column(scale=1):
+                            gr.HTML("<div class='section-label'>Source</div>")
+                            ve_audio = gr.Audio(label="Audio to edit",
+                                                type="filepath")
+                            ve_orig = gr.Textbox(
+                                label="Original transcript \u2014 what the "
+                                      "audio actually says", lines=4,
+                                placeholder="The model aligns this against the "
+                                            "audio to locate the edit.")
+                            ve_new = gr.Textbox(
+                                label="Edited text \u2014 change only what you "
+                                      "want re-spoken", lines=4)
+                            with gr.Row():
+                                ve_gran = gr.Radio(
+                                    ["Word (precise)", "Segment (safer)"],
+                                    value="Word (precise)",
+                                    label="Alignment granularity")
+                                ve_mask = gr.Slider(
+                                    0.0, 0.5, value=0.1, step=0.01,
+                                    label="Mask expansion",
+                                    info="How far past the changed words the "
+                                         "model may regenerate. Higher blends "
+                                         "the join better but keeps less of "
+                                         "the original recording.")
+                            ve_go = gr.Button("\u25b6  Edit the speech",
+                                              variant="primary")
+                        with gr.Column(scale=1):
+                            gr.HTML("<div class='section-label'>Result</div>")
+                            ve_out = gr.Audio(label="Edited audio",
+                                              type="filepath",
+                                              interactive=False)
+                            ve_status = gr.HTML(AWAIT)
+                    ve_go.click(do_voice_edit,
+                                [ve_audio, ve_orig, ve_new, ve_mask, ve_gran],
+                                [ve_out, ve_status])
+
+                with gr.Tab("Voice Clone"):
+                    with gr.Row(equal_height=False):
+                        with gr.Column(scale=1):
+                            gr.HTML("<div class='section-label'>Reference "
+                                    "voice</div>")
+                            vc_ref = gr.Audio(
+                                label="Reference clip \u2014 a few clean "
+                                      "seconds of the target speaker",
+                                type="filepath")
+                            vc_text = gr.Textbox(label="Text to speak", lines=5)
+                            with gr.Row():
+                                vc_emotion = gr.Slider(
+                                    0.0, 5.0, value=1.0, step=0.1,
+                                    label="Emotion guidance",
+                                    info="Higher follows the reference&#39;s "
+                                         "expressiveness more closely.")
+                                vc_nvv = gr.Slider(
+                                    0.0, 5.0, value=1.0, step=0.1,
+                                    label="Voice guidance",
+                                    info="Higher holds tighter to the "
+                                         "reference timbre.")
+                            vc_go = gr.Button("\u25b6  Generate speech",
+                                              variant="primary")
+                        with gr.Column(scale=1):
+                            gr.HTML("<div class='section-label'>Result</div>")
+                            vc_out = gr.Audio(label="Generated audio",
+                                              type="filepath",
+                                              interactive=False)
+                            vc_status = gr.HTML(AWAIT)
+                    vc_go.click(do_voice_clone,
+                                [vc_ref, vc_text, vc_emotion, vc_nvv],
+                                [vc_out, vc_status])
+
+        # ── 03 Text → Image ─────────────────────────────────────────────────
+        with gr.Tab("03 · Text → Image", id=1):
             gr.HTML(hero("ti-photo", "Text → Image",
                 "Generate photoreal images from a prompt (SDXL)."))
             with gr.Row(equal_height=False):
@@ -622,8 +818,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                           ti_steps, ti_guid, ti_seed],
                          [ti_out, ti_status])
 
-        # ── 03 Face Swap ─────────────────────────────────────────────────────
-        with gr.Tab("03 · Face Swap", id=2):
+        # ── 04 Face Swap ─────────────────────────────────────────────────────
+        with gr.Tab("04 · Face Swap", id=2):
             gr.HTML(hero("ti-mask", "Face Swap",
                 "Swap a source face onto a target image or every video frame."))
             with gr.Row(equal_height=False):
@@ -655,8 +851,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                          [fs_src, fs_mode, fs_timg, fs_tvid, fs_enh],
                          [fs_oimg, fs_ovid, fs_status])
 
-        # ── 04 Text → Video (LTX-2.3 text-only+audio · Wan2.2-I2V/LTX-2.3 w/ a photo)
-        with gr.Tab("04 · Text → Video", id=3):
+        # ── 05 Text → Video (LTX-2.3 text-only+audio · Wan2.2-I2V/LTX-2.3 w/ a photo)
+        with gr.Tab("05 · Text → Video", id=3):
             gr.HTML(hero("ti-movie", "Text → Video",
                 "Prompt → video with synchronized audio (LTX-2.3). Add a "
                 "reference photo to animate it instead — identity-preserving "
@@ -708,8 +904,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                           lx_fps, lx_steps, lx_guid, lx_engine, lx_audio],
                          [lx_out, lx_status])
 
-        # ── 05 Image Edit (Qwen-Image-Edit-2509) ─────────────────────────────
-        with gr.Tab("05 · Image Edit", id=4):
+        # ── 06 Image Edit (Qwen-Image-Edit-2509) ─────────────────────────────
+        with gr.Tab("06 · Image Edit", id=4):
             gr.HTML(hero("ti-wand", "Image Edit",
                 "Edit image(s) by instruction — change background, style, add "
                 "objects, or combine multiple references (e.g. person + product)."))
@@ -739,8 +935,8 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
             ie_btn.click(run_edit, [ie_img, ie_prompt, ie_neg, ie_steps, ie_guid, ie_seed],
                          [ie_out, ie_status])
 
-        # ── 06 Media Studio (ffmpeg/CPU — no GPU cost) ───────────────────────
-        with gr.Tab("06 · Media Studio", id=5):
+        # ── 07 Media Studio (ffmpeg/CPU — no GPU cost) ───────────────────────
+        with gr.Tab("07 · Media Studio", id=5):
             gr.HTML(hero("ti-adjustments", "Media Studio",
                 "Trim, grab frames, clean audio, convert, merge — all CPU, no GPU."))
             gr.HTML("<div class='section-label'>Prep your media — free (no A100). "

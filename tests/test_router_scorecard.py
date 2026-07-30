@@ -85,12 +85,18 @@ d_off = R.resolve("ko", has_word_timings=True, allow_nc=False, available=AVAIL)
 d_on = R.resolve("ko", has_word_timings=True, allow_nc=True, available=AVAIL)
 check("NC engine not selected while uninstalled even when allowed",
       d_on["engine"] == "xtts", d_on["engine"])
-# For an engine that is BOTH uninstalled and non-commercial, the honest
-# blocker is non-integration: naming the licence would imply that enabling
-# allow_nc fixes it, which it does not.
-check("uninstalled NC engine reports non-integration, not licence",
-      any("not integrated" in w for w in d_off["warnings"])
-      and not any("non-commercial" in w for w in d_off["warnings"]),
+# An engine that is BOTH uninstalled and non-commercial is blocked twice over.
+# Naming only the licence would imply that enabling allow_nc fixes it, and
+# naming only the integration gap would send someone to wire up an engine the
+# licence setting would then still veto. Both have to be said.
+check("uninstalled NC engine names the integration gap",
+      any("not integrated" in w for w in d_off["warnings"]),
+      str(d_off["warnings"]))
+check("uninstalled NC engine also names the licence",
+      any("non-commercial" in w for w in d_off["warnings"]),
+      str(d_off["warnings"]))
+check("both blockers appear in one message, not two contradictory ones",
+      sum(1 for w in d_off["warnings"] if "VoiceCraft" in w) == 1,
       str(d_off["warnings"]))
 # Once such an engine IS integrated, the licence becomes the real blocker and
 # must be reported as such.
@@ -99,9 +105,19 @@ try:
     R.ENGINES["voicecraft_x"]["integrated"] = True
     d_lic = R.resolve("ko", has_word_timings=True, allow_nc=False,
                       available=AVAIL)
-    check("integrated NC engine reports the licence as the blocker",
+    check("integrated NC engine reports the licence as a blocker",
           any("non-commercial" in w for w in d_lic["warnings"]),
           str(d_lic["warnings"]))
+    # It is ALSO not built here. Reporting only one would send the operator to
+    # do work that the other blocker would then still veto.
+    check("every blocker is named, not just the first",
+          any("not built" in w and "non-commercial" in w
+              for w in d_lic["warnings"]), str(d_lic["warnings"]))
+    d_built = R.resolve("ko", has_word_timings=True, allow_nc=False,
+                        available={"xtts": True, "voicecraft_x": True})
+    check("a resolved blocker stops being reported",
+          not any("not built" in w for w in d_built["warnings"]),
+          str(d_built["warnings"]))
     d_ok = R.resolve("ko", has_word_timings=True, allow_nc=True,
                      available={"xtts": True, "voicecraft_x": True})
     check("allow_nc plus availability selects the better tier",
@@ -129,17 +145,24 @@ check("integrated_only filters uninstalled",
 check("NC excluded unless allowed",
       not any(s["non_commercial"] for _, s in R.candidates("ko", allow_nc=False,
                                                           integrated_only=False)))
-check("zh matches an engine registered as plain zh",
-      any(k == "viitor_nar" for k, _ in
-          R.candidates("zh-cn", integrated_only=False)), "zh mapping failed")
+check("zh-cn matches an engine registered as plain zh",
+      any(k == "voicecraft_x" for k, _ in
+          R.candidates("zh-cn", integrated_only=False, allow_nc=True)),
+      "zh mapping failed")
+check("the mapping is in _engine_supports, not the caller",
+      R._engine_supports({"languages": {"zh"}}, "zh-cn")
+      and not R._engine_supports({"languages": {"zh"}}, "ja"))
 
-tbl = R.capability_table()
+tbl = R.capability_table(available={"xtts": True})
 check("capability table covers many languages", len(tbl) >= 17, str(len(tbl)))
 check("table reports both current and possible tiers",
       all({"tier", "best_possible_tier"} <= set(v) for v in tbl.values()))
-check("english shows an upgrade path",
+check("english shows an upgrade path when tier A is not built",
       tbl["en"]["tier"] == "C" and tbl["en"]["best_possible_tier"] == "A",
       str(tbl["en"]))
+check("and no upgrade path once it is built",
+      R.capability_table(
+          available={"xtts": True, "viitor_nar": True})["en"]["tier"] == "A")
 
 print()
 print("=" * 74)

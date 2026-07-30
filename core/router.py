@@ -41,15 +41,20 @@ ENGINES = {
         "label": "ViiTorVoice-NAR",
         "tier": "A",
         "granularity": "infill",
-        "languages": {"en", "zh", "zh-cn"},
+        # English only, deliberately. The model supports Chinese upstream, but
+        # this deployment does not enable it, so claiming it here would have the
+        # router promise a tier no one has validated.
+        "languages": {"en"},
         "licence": "Apache-2.0",
         "non_commercial": False,
         "note": ("True local infill: completes masked audio tokens under the "
                  "surrounding real audio, so only the changed words are "
                  "synthetic."),
-        # Ships as a gRPC service plus an HTTP gateway rather than a library, so
-        # integrating it means supervising a server process -- not yet wired.
-        "integrated": False,
+        # Ships as five gRPC services behind an HTTP gateway rather than as a
+        # library, so engines/viitor_engine.py supervises the process group and
+        # speaks HTTP to it. Availability is still probed per call, since the
+        # environment and weights are an optional build.
+        "integrated": True,
     },
     "voicecraft_x": {
         "label": "VoiceCraft-X",
@@ -130,7 +135,7 @@ def candidates(lang, allow_nc=False, integrated_only=True):
 
 
 def resolve(language, has_word_timings=True, allow_nc=False,
-            available=None):
+            available=None, prefer_tier=None):
     """Choose an engine and tier for an edit.
 
     language          transcript language code
@@ -139,6 +144,12 @@ def resolve(language, has_word_timings=True, allow_nc=False,
     available         optional {engine_key: bool}; when given, an engine is only
                       selected if its entry is truthy. Lets the caller reflect
                       what is actually built without this module probing.
+    prefer_tier       'A'|'B'|'C'|'D' to request a specific tier instead of the
+                      best available. Deliberately a REQUEST, not a command: a
+                      tier that this language and installation cannot deliver
+                      falls back to what they can, and says so. Asking for a
+                      LOWER tier is honoured exactly -- that is how an operator
+                      A/Bs infill against sentence regeneration.
 
     Returns a decision dict. Never raises and never returns None -- an edit must
     always resolve to something, even if that something is tier D with a warning.
@@ -149,12 +160,34 @@ def resolve(language, has_word_timings=True, allow_nc=False,
     if available is not None:
         usable = [(k, s) for k, s in usable if available.get(k)]
 
+    warnings = []
+    prefer_tier = (prefer_tier or "").strip().upper() or None
+    if prefer_tier and prefer_tier not in TIER_ORDER:
+        warnings.append(f"Unknown tier '{prefer_tier}' requested; using the "
+                        f"best available instead.")
+        prefer_tier = None
+    if prefer_tier:
+        exact = [(k, sp) for k, sp in usable if sp["tier"] == prefer_tier]
+        if exact:
+            usable = exact
+        elif prefer_tier == "D":
+            # D is not an engine, it is a granularity: honour it by forcing
+            # segment-level below rather than by filtering the engine list.
+            pass
+        else:
+            reachable = [sp["tier"] for _, sp in usable]
+            warnings.append(
+                f"Tier {prefer_tier} was requested but is not available for "
+                f"'{lang}' with what is installed"
+                + (f" — using tier {sorted(reachable)[0]}." if reachable
+                   else " — falling back.")
+            )
+            prefer_tier = None
+
     # What the language could achieve if every engine were installed and NC
     # material were permitted -- the honest ceiling, used to explain the gap.
     ceiling = candidates(lang, allow_nc=True, integrated_only=False)
     best_possible = ceiling[0][1]["tier"] if ceiling else "D"
-
-    warnings = []
 
     if not usable:
         # Nothing serves this language. Fall back to the sentence engine in
@@ -177,6 +210,12 @@ def resolve(language, has_word_timings=True, allow_nc=False,
         key, spec = usable[0]
         tier = spec["tier"]
         gran = spec["granularity"]
+        if prefer_tier == "D":
+            # An explicit request to edit whole transcript lines.
+            tier = "D"
+            gran = "segment"
+            warnings.append("Tier D was requested: edits cover whole "
+                            "transcript lines rather than individual words.")
         if not has_word_timings:
             # Without word timings the edit cannot be localised, whatever the
             # engine is capable of.
@@ -205,16 +244,25 @@ def resolve(language, has_word_timings=True, allow_nc=False,
                   if TIER_ORDER.index(s["tier"]) < TIER_ORDER.index(decision["tier"])]
         if better:
             b = better[0]
+            b_key = next((k for k, sp in ENGINES.items() if sp is b), None)
+            # An engine can be blocked by more than one thing at once, and
+            # reporting only the first is actively misleading: telling someone
+            # to build an engine that a licence setting will then still exclude
+            # sends them to do work that changes nothing. List every blocker.
+            blockers = []
             if not b.get("integrated"):
+                blockers.append("is not integrated yet")
+            elif available is not None and not available.get(b_key):
+                # Integrated in code but not built in this session -- a
+                # different problem from "no engine covers this language", and a
+                # fixable one, so it must not be reported as the same thing.
+                blockers.append("is not built in this session")
+            if b["non_commercial"] and not allow_nc:
+                blockers.append("is non-commercial and not enabled")
+            if blockers:
                 warnings.append(
                     f"{b['label']} (tier {b['tier']}) would give a better result "
-                    f"for '{lang}' but is not integrated yet."
-                )
-            elif b["non_commercial"] and not allow_nc:
-                warnings.append(
-                    f"{b['label']} (tier {b['tier']}) would give a better result "
-                    f"for '{lang}' but is non-commercial; enable it explicitly "
-                    f"to use it."
+                    f"for '{lang}' but " + " and ".join(blockers) + "."
                 )
 
     decision["warnings"] = warnings
@@ -233,11 +281,31 @@ def describe(decision):
     return s
 
 
-def capability_table(allow_nc=False):
+def selectable_tiers(language, allow_nc=False, available=None):
+    """Tiers an operator may actually pick for `language`, best first.
+
+    The UI offers a choice, so it must offer only real options: listing tier A
+    for a language no infill engine covers would invite a request that silently
+    downgrades. D is always offered -- editing whole lines is always possible.
+    """
+    lang = normalise_lang(language)
+    usable = candidates(lang, allow_nc=allow_nc, integrated_only=True)
+    if available is not None:
+        usable = [(k, sp) for k, sp in usable if available.get(k)]
+    tiers = sorted({sp["tier"] for _, sp in usable},
+                   key=TIER_ORDER.index)
+    if "D" not in tiers:
+        tiers.append("D")
+    return tiers
+
+
+def capability_table(allow_nc=False, available=None):
     """Per-language achievable tier, for surfacing the matrix in the UI.
 
-    Returns {lang: {"tier": t, "engine": label, "integrated": bool}} covering
-    every language any registered engine claims.
+    `available` matters: an engine can be integrated in code but not built in
+    this session, and a table that showed its tier anyway would tell the
+    operator they have a capability they do not. The 'tier' column is what would
+    actually run right now; 'best_possible_tier' is the ceiling.
     """
     langs = set()
     for spec in ENGINES.values():
@@ -245,6 +313,8 @@ def capability_table(allow_nc=False):
     table = {}
     for lang in sorted(langs):
         now = candidates(lang, allow_nc=allow_nc, integrated_only=True)
+        if available is not None:
+            now = [(k, sp) for k, sp in now if available.get(k)]
         best = candidates(lang, allow_nc=True, integrated_only=False)
         table[lang] = {
             "tier": now[0][1]["tier"] if now else "D",

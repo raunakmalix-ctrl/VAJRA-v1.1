@@ -11,7 +11,9 @@
 # whole step and prints that target's log tail.
 #
 # Module -> required targets
-#   Edit & Relip    voice lipsync  (+ demucs for separation)
+#   Edit & Relip    voice lipsync  (+ demucs for separation,
+#                                   + viitor for tier A infill)
+#   Voice Edit      viitor
 #   Text -> Image   (none — runs in the principal runtime)
 #   Face Swap       (none)
 #   Media Studio    (none)
@@ -22,12 +24,13 @@ set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/_venv_common.sh"
 
-ALL_TARGETS="voice lipsync demucs wan qwen ltx2"
+ALL_TARGETS="voice lipsync demucs viitor wan qwen ltx2"
 
 declare -A SCRIPT=(
   [voice]="make_voice_venv.sh"
   [lipsync]="make_latentsync_venv.sh"
   [demucs]="make_demucs_venv.sh"
+  [viitor]="make_viitor_venv.sh"
   [wan]="make_wan_venv.sh"
   [qwen]="make_qwen_venv.sh"
   [ltx2]="make_ltx2_venv.sh"
@@ -46,7 +49,7 @@ REQUESTED=()
 for arg in "$@"; do
   case "$arg" in
     all) for t in $ALL_TARGETS; do REQUESTED+=("$t"); done ;;
-    voice|lipsync|demucs|wan|qwen|ltx2) REQUESTED+=("$arg") ;;
+    voice|lipsync|demucs|viitor|wan|qwen|ltx2) REQUESTED+=("$arg") ;;
     *) echo "!! unknown target '$arg' (valid: $ALL_TARGETS all)"; exit 2 ;;
   esac
 done

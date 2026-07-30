@@ -104,7 +104,8 @@ strip_torch_pins() {
 # Report what exists, so the notebook/operator can see the current state.
 venv_status() {
   echo "==> environment status ($VENVS)"
-  for v in venv_voice venv_latentsync venv_demucs venv_wan venv_qwen venv_ltx2; do
+  for v in venv_voice venv_latentsync venv_demucs venv_viitor \
+           venv_wan venv_qwen venv_ltx2; do
     if [ -x "$VENVS/$v/bin/python" ]; then
       echo "    [built]   $v"
     else

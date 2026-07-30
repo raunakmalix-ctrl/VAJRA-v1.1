@@ -1,7 +1,7 @@
 # VAJRA 2.0 — AI Media Studio
 
 A single Gradio app (built for Google Colab Pro, runs 100% local/offline once
-models are cached) bundling six AI media tools:
+models are cached) bundling seven AI media tools:
 
 1. **Edit & Relip** — upload a talking-head video, extract its transcript, edit
    the words, and only the changed *words* are re-voiced (in the speaker's own
@@ -10,14 +10,17 @@ models are cached) bundling six AI media tools:
    and the result is scored against the recording's own natural word boundaries,
    so the edit's detectability is measured rather than assumed. Everything
    outside an edit passes through bit-identical.
-2. **Text → Image** — photorealistic image generation from a prompt.
-3. **Face Swap** — source face onto a target **image or video**.
-4. **Text → Video** — prompt-only video generation with synchronized audio, or
+2. **Voice Editing & Cloning** — regenerate only the words you changed in a
+   recording, conditioned on the real audio either side, or speak new text in a
+   cloned voice. English only.
+3. **Text → Image** — photorealistic image generation from a prompt.
+4. **Face Swap** — source face onto a target **image or video**.
+5. **Text → Video** — prompt-only video generation with synchronized audio, or
    supply a reference photo for identity-preserving **motion video** (pick an
    engine) with an optional audio track paired onto the output.
-5. **Image Edit** — edit 1-3 images by instruction (e.g. "put the product from
+6. **Image Edit** — edit 1-3 images by instruction (e.g. "put the product from
    image 2 into image 1's scene").
-6. **Media Studio** — trim, convert, resize, denoise, caption, remove
+7. **Media Studio** — trim, convert, resize, denoise, caption, remove
    backgrounds, merge clips — all CPU/ffmpeg, no GPU cost, with "→ Send to"
    wiring into the AI tabs.
 
@@ -26,6 +29,7 @@ models are cached) bundling six AI media tools:
 | Feature | Models |
 |---|---|
 | Transcript | faster-whisper (word-level timestamps) |
+| Local speech infill (tier A, English) | ViiTorVoice-NAR |
 | Voice clone (17 languages) | XTTS-v2 |
 | Speech / background separation | Demucs v4 (htdemucs) |
 | Lip re-sync | LatentSync (primary) · Wav2Lip (fallback) |
@@ -56,6 +60,7 @@ already have.
 | Module | Step 6 environments | Step 7 weight groups |
 |---|---|---|
 | Edit & Relip | `VOICE` + `LIPSYNC` (+ `SEPARATE`, recommended) | `voice`, `lipsync` |
+| Voice Editing & Cloning | `VIITOR` | `viitor` |
 | Text → Image | *none* | *none* |
 | Face Swap | *none* | `faceswap` |
 | Text → Video | `LTX2` and/or `WAN` | *none* |
@@ -75,7 +80,7 @@ can't execute a venv's python.
 ## Architecture
 
 ```
-app.py / app_theme.py     # Gradio UI (6 tabs, themed, share link)
+app.py / app_theme.py     # Gradio UI (7 tabs, themed, share link)
 core/                     # config, device, model_manager, subprocess_runner, router, textdiff
 engines/                  # one module per feature
 workers/                  # scripts run inside isolated venvs (voice, Demucs, LTX-2.3, Wan2.2-I2V, Qwen-Image-Edit)

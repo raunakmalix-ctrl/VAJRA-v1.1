@@ -43,6 +43,7 @@ os.environ.setdefault("HF_HUB_CACHE", HF_CACHE_DIR)
 WAV2LIP_DIR    = os.path.join(THIRD_PARTY, "Wav2Lip")
 LATENTSYNC_DIR = os.path.join(THIRD_PARTY, "LatentSync")
 CODEFORMER_DIR = os.path.join(THIRD_PARTY, "CodeFormer")
+VIITOR_DIR     = os.path.join(THIRD_PARTY, "viitor-voice-nar")
 
 # ── Model weight paths ──────────────────────────────────────────────────────
 # Face swap
@@ -73,6 +74,7 @@ def _venv_python(name):
 
 VENV_VOICE_PY      = _venv_python("venv_voice")
 VENV_DEMUCS_PY     = _venv_python("venv_demucs")
+VENV_VIITOR_PY     = _venv_python("venv_viitor")
 VENV_LATENTSYNC_PY = _venv_python("venv_latentsync")
 VENV_LTX2_PY       = _venv_python("venv_ltx2")
 VENV_WAN_PY        = _venv_python("venv_wan")
@@ -86,6 +88,27 @@ VENV_QWEN_PY       = _venv_python("venv_qwen")
 # pins its own torch/torchaudio pair, which conflicts with the principal
 # runtime's diffusion stack.
 DEMUCS_MODEL = os.environ.get("DEMUCS_MODEL", "htdemucs")
+
+# ── ViiTorVoice-NAR (tier A local infill) ───────────────────────────────────
+# Ships as five gRPC services behind an HTTP gateway rather than as a library,
+# so it is supervised as a process group and spoken to over HTTP on localhost.
+VIITOR_REPO      = "https://github.com/viitor-ai/viitor-voice-nar.git"
+VIITOR_HF_REPO   = "ZzWater/ViiTorVoice-NAR"
+# Weights go under MODEL_ROOT so USE_DRIVE persists them like every other model,
+# rather than re-downloading a multi-GB stack every session.
+VIITOR_MODELS    = os.path.join(MODEL_ROOT, "viitor")
+VIITOR_HTTP_PORT = int(os.environ.get("VIITOR_HTTP_PORT", "7861"))
+VIITOR_HOST      = os.environ.get("VIITOR_HOST", "127.0.0.1")
+VIITOR_BASE_URL  = f"http://{VIITOR_HOST}:{VIITOR_HTTP_PORT}"
+# English only, by deliberate choice. The upstream aligner defaults to Chinese,
+# so this has to be stated explicitly or an English edit is aligned with the
+# wrong model.
+VIITOR_LANGUAGE  = os.environ.get("VIITOR_LANGUAGE", "en")
+# Cold start loads five models; the gateway answers /health only once the whole
+# group is up, so the first call has to wait rather than assume.
+VIITOR_START_TIMEOUT_SEC = int(os.environ.get("VIITOR_START_TIMEOUT_SEC", "600"))
+VIITOR_REQUEST_TIMEOUT_SEC = int(
+    os.environ.get("VIITOR_REQUEST_TIMEOUT_SEC", "900"))
 
 # LTX-2.3 (Lightricks) text -> video, or image+prompt -> motion video, WITH
 # synchronized audio (a single DiT-based audio-video model; diffusers exposes

@@ -113,6 +113,18 @@ def latentsync():
     _link_tree(LATENTSYNC_WEIGHTS_DIR, ckpt_dir)
 
 
+def viitor():
+    # ViiTorVoice-NAR weights. Upstream is explicit that symlinks are not
+    # permitted here, so the blobs are materialised rather than linked -- and
+    # they go under MODEL_ROOT so USE_DRIVE persists them like everything else,
+    # instead of re-fetching a multi-gigabyte stack every session.
+    from core.config import VIITOR_MODELS, VIITOR_HF_REPO
+    marker = os.path.join(VIITOR_MODELS, "llm")
+    if os.path.isdir(marker):
+        print("  exists"); return
+    _hf_snapshot(VIITOR_HF_REPO, VIITOR_MODELS)
+
+
 # Download groups, keyed by the module that needs them. Fetching everything
 # costs many gigabytes and many minutes; most sessions exercise one or two
 # modules, so the operator can request only what they intend to run.
@@ -126,12 +138,15 @@ GROUPS = {
                  ("Wav2Lip GAN (lip-sync fallback)", wav2lip)],
     "faceswap": [("inswapper_128 (face swap)", inswapper),
                  ("GFPGAN v1.4 (enhance)", gfpgan)],
+    "viitor":   [("ViiTorVoice-NAR (tier A local infill)", viitor)],
 }
 
 # Which groups each module needs. Modules absent from this map need no
 # pre-downloaded weights -- they fetch on first use.
 MODULE_GROUPS = {
     "relip":     ["voice", "lipsync"],
+    # Tier A is optional for Edit & Relip but is the whole point of this tab.
+    "voiceedit": ["viitor"],
     "faceswap":  ["faceswap"],
     "txt2img":   [],   # SDXL/RealVisXL fetches on first use
     "txt2vid":   [],   # LTX-2.3 / Wan2.2 fetch inside their own environments

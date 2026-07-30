@@ -33,6 +33,7 @@ from core.device import DEVICE
 from engines.voice_engine import VoiceEngine
 from engines.lipsync_engine import LipSyncEngine
 from engines.separate_engine import SeparateEngine
+from engines import viitor_engine
 
 # Resolved from the voice engine rather than duplicated, so the two can never
 # disagree about what the model supports.
@@ -125,6 +126,7 @@ class TranscriptEngine(BaseEngine):
         self.voice    = VoiceEngine()
         self.lipsync  = LipSyncEngine()
         self.separate = SeparateEngine()
+        self.viitor   = viitor_engine.ViitorEngine()
 
     # ── step 1 ────────────────────────────────────────────────────────────────
     def extract_transcript(self, video_path):
@@ -210,7 +212,7 @@ class TranscriptEngine(BaseEngine):
                     realism=True, max_stretch=None, word_level=True,
                     auto_reference=True, separate="auto",
                     windowed_lipsync=True, allow_nc=False,
-                    scorecard=True):
+                    scorecard=True, prefer_tier=None):
         """Re-voice only the changed lines and splice them back in.
 
         realism: run the dsp match chain (duration fit, spectral/room/loudness
@@ -324,10 +326,40 @@ class TranscriptEngine(BaseEngine):
             state.get("language", "en"),
             has_word_timings=has_words,
             allow_nc=allow_nc,
-            available={"xtts": os.path.exists(VENV_VOICE_PY)},
+            prefer_tier=prefer_tier,
+            available={"xtts": os.path.exists(VENV_VOICE_PY),
+                       "viitor_nar": viitor_engine.available()},
         )
         state["routing"] = decision
         print(f"[Transcript] Routing: {edit_router.describe(decision)}")
+
+        # Tier A works differently from tiers B-D and the flow has to follow.
+        # The infill model takes the AUDIO plus the original and edited text and
+        # does its own alignment and masking internally -- it is not handed a
+        # phrase to speak. So the unit of work becomes the segment: it gets the
+        # line as context, regenerates only the words that changed inside it,
+        # and returns the line with everything else conditioned on the real
+        # recording. Feeding it isolated word spans instead would throw away the
+        # surrounding audio that makes it a tier A engine in the first place.
+        if decision["tier"] == "A":
+            edits = []
+            for i, seg in enumerate(segments):
+                new_line = new_lines[i] if i < len(new_lines) else seg["text"]
+                if textdiff.normalise(new_line.strip()) == textdiff.normalise(
+                        (seg["text"] or "").strip()):
+                    continue
+                edits.append((i, _clamp(seg["start"]), _clamp(seg["end"]),
+                              new_line,
+                              {"granularity": "infill",
+                               "orig_text": seg["text"],
+                               "slack_start": seg["start"],
+                               "slack_end": seg["end"],
+                               "expanded": False}))
+            edits = [e for e in edits if e[2] > e[1]]
+            if not edits:
+                raise ValueError("No changes detected in the transcript.")
+            print(f"[Transcript] tier A: {len(edits)} line(s) sent to "
+                  f"ViiTorVoice for in-place infill")
         for warn in decision.get("warnings", []):
             print(f"[Transcript] NOTE {warn}")
 
@@ -398,14 +430,29 @@ class TranscriptEngine(BaseEngine):
                 progress(k / max(len(edits), 1),
                          desc=f"Re-voicing edit {k+1}/{len(edits)}")
 
-            clip_wav = self.voice.run(
-                text=new_text,
-                reference_audio_path=ref_path,
-                # The router already decided what we can actually synthesise in,
-                # and warned if that differs from the detected language.
-                language=decision.get("synthesis_language")
-                         or state.get("synthesis_language") or "en",
-            )
+            synth_lang = (decision.get("synthesis_language")
+                          or state.get("synthesis_language") or "en")
+            if decision["tier"] == "A":
+                # Hand the model the real audio of this line. It masks and
+                # regenerates only the changed words itself, conditioned on
+                # everything around them.
+                line_wav = timestamp_file(f"line_{i+1}", "wav")
+                dsp.save(line_wav, track[start:end], sr)
+                clip_wav = self.viitor.local_edit(
+                    source_audio_path=line_wav,
+                    original_text=span_meta.get("orig_text") or "",
+                    edited_text=new_text,
+                    language=synth_lang,
+                    progress=progress,
+                )
+            else:
+                clip_wav = self.voice.run(
+                    text=new_text,
+                    reference_audio_path=ref_path,
+                    # The router already decided what we can actually synthesise
+                    # in, and warned if that differs from the detected language.
+                    language=synth_lang,
+                )
             span, span_sr = dsp.load(clip_wav, mono=True)
             span = dsp.resample(span, span_sr, sr)
             # Synthesisers pad their output with silence. That padding is not
@@ -430,6 +477,8 @@ class TranscriptEngine(BaseEngine):
             # Still too long even with the silence: re-speak the WHOLE line
             # instead. A fully synthetic line is a real cost, but it is coherent,
             # whereas a truncated span is audibly broken. Reported either way.
+            # Tier A already works line-at-a-time, so there is no smaller unit
+            # to escalate from -- only the phrase path can escalate.
             if widen["short_sec"] > _ESCALATE_SEC and span_meta.get(
                     "granularity") == "word":
                 seg = segments[i]

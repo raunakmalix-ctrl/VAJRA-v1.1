@@ -7,6 +7,7 @@ from engines.ltx2_engine import LTX2Engine
 from engines.media_engine import MediaEngine
 from engines.motion_engine import MotionVideoEngine
 from engines.qwen_edit_engine import QwenEditEngine
+from engines.viitor_engine import ViitorEngine
 
 ENGINES = {
     "diffusion":   DiffusionEngine(),
@@ -18,4 +19,5 @@ ENGINES = {
     "media":       MediaEngine(),
     "motion":      MotionVideoEngine(),
     "qwen_edit":   QwenEditEngine(),
+    "viitor":      ViitorEngine(),
 }
