@@ -114,15 +114,24 @@ class LipSyncEngine(BaseEngine):
                      method="latentsync", inference_steps=20,
                      guidance_scale=1.5, pad_sec=DEFAULT_PAD_SEC,
                      merge_gap_sec=DEFAULT_MERGE_GAP_SEC,
-                     mask_mouth=True, progress=None):
+                     mask_mouth=True, progress=None, report=None):
         """Re-sync only `windows` (list of (t_start, t_end) in seconds).
 
         Falls back to whole-video sync -- and says so -- when windowing would not
         pay for itself: no windows given, or the windows already cover most of
         the clip.
 
+        report: optional dict, filled in with what was ACTUALLY done -- the
+        merged windows, the coverage, and whether the whole video was synced
+        after all. The caller cannot re-derive this without duplicating the
+        fallback rules, and a duplicate could disagree with reality.
+
         Returns the output video path.
         """
+        if report is None:
+            report = {}
+        report.update({"windowed": False, "windows": [], "coverage": 0.0,
+                       "reason": ""})
         import numpy as np
         import vision
 
@@ -135,6 +144,7 @@ class LipSyncEngine(BaseEngine):
         if fps <= 0 or n_frames <= 0 or w <= 0 or h <= 0:
             print("[LipSync] Could not probe the video reliably; "
                   "falling back to whole-video sync.")
+            report["reason"] = "the video could not be probed reliably"
             return self.run(video_path, audio_path, method,
                             inference_steps, guidance_scale)
 
@@ -143,6 +153,7 @@ class LipSyncEngine(BaseEngine):
                                     duration_sec=dur)
         if not wins:
             print("[LipSync] No edit windows supplied; syncing the whole video.")
+            report["reason"] = "no edit windows were supplied"
             return self.run(video_path, audio_path, method,
                             inference_steps, guidance_scale)
 
@@ -151,12 +162,19 @@ class LipSyncEngine(BaseEngine):
             print(f"[LipSync] Windows cover {cov*100:.0f}% of the clip; "
                   f"syncing the whole video instead (simpler and more "
                   f"consistent than stitching that many windows).")
+            report["coverage"] = float(cov)
+            report["reason"] = (f"edits cover {cov*100:.0f}% of the clip, so the "
+                                f"whole video was synced instead")
             return self.run(video_path, audio_path, method,
                             inference_steps, guidance_scale)
 
         print(f"[LipSync] Windowed sync: {len(wins)} window(s), "
               f"{sum(b - a for a, b in wins):.2f}s of {dur:.2f}s "
               f"({cov*100:.2f}% of the video).")
+
+        report.update({"windowed": True, "windows": [(float(a), float(b))
+                                                     for a, b in wins],
+                       "coverage": float(cov), "duration_sec": float(dur)})
 
         wav_path, is_tmp = to_wav(audio_path)
         workdir = tempfile.mkdtemp(prefix="vajra_relip_win_")

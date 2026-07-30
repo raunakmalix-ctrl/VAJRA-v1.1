@@ -28,14 +28,16 @@ import tempfile
 
 from core.base_engine import BaseEngine
 from core.utils import timestamp_file, transcode_h264
-from core.config import FFMPEG_PATH, WHISPERX_MODEL
+from core.config import FFMPEG_PATH, WHISPERX_MODEL, VENV_VOICE_PY
 from core.device import DEVICE
 from engines.voice_engine import VoiceEngine
 from engines.lipsync_engine import LipSyncEngine
 from engines.separate_engine import SeparateEngine
 
-# XTTS supports en/hi; anything else falls back to English.
-_XTTS_LANGS = {"en", "hi"}
+# Resolved from the voice engine rather than duplicated, so the two can never
+# disagree about what the model supports.
+from engines.voice_engine import SUPPORTED_LANGUAGES as _VOICE_LANGS
+_XTTS_LANGS = set(_VOICE_LANGS.values())
 
 _whisper_model = None
 _whisper_device = None
@@ -137,6 +139,9 @@ class TranscriptEngine(BaseEngine):
                   f"edits will regenerate whole lines.")
 
         display = "\n".join(s["text"] for s in segments)
+        # Keep the DETECTED language, not the one we can synthesise. Folding an
+        # unsupported language to English here would hide the compromise from
+        # the router, which exists precisely to report it (core/router.py).
         xtts_lang = lang if lang in _XTTS_LANGS else "en"
         # Normalize to H.264 so the lip-sync engines can decode the frames
         # (Colab can't decode AV1, which the uploaded clip may be).
@@ -145,7 +150,9 @@ class TranscriptEngine(BaseEngine):
             "video": norm_video,
             "audio": audio_path,
             "segments": segments,
-            "language": xtts_lang,
+            "language": lang,
+            "synthesis_language": xtts_lang,
+            "has_word_timings": bool(n_words),
         }
         return display, state
 
@@ -154,7 +161,8 @@ class TranscriptEngine(BaseEngine):
                     inference_steps=20, guidance_scale=1.5, progress=None,
                     realism=True, max_stretch=None, word_level=True,
                     auto_reference=True, separate="auto",
-                    windowed_lipsync=True):
+                    windowed_lipsync=True, allow_nc=False,
+                    scorecard=True):
         """Re-voice only the changed lines and splice them back in.
 
         realism: run the dsp match chain (duration fit, spectral/room/loudness
@@ -180,6 +188,11 @@ class TranscriptEngine(BaseEngine):
         composite them into the original frames, instead of putting the whole
         clip through the model. Falls back to whole-video sync automatically when
         the edits already cover most of the footage.
+
+        allow_nc: permit non-commercially-licensed engines in the router. Off by
+        default, so a restricted licence is never a silent default.
+
+        scorecard: measure the finished edit and record the metrics on `state`.
         """
         if not state:
             raise ValueError("Extract a transcript first.")
@@ -187,6 +200,7 @@ class TranscriptEngine(BaseEngine):
         import dsp
         from dsp import reference as dspref
         from core import textdiff
+        from core import router as edit_router
 
         segments = state["segments"]
         new_lines = [l.strip() for l in edited_text.split("\n")]
@@ -254,6 +268,21 @@ class TranscriptEngine(BaseEngine):
         if not edits:
             raise ValueError("No changes detected in the transcript.")
 
+        # Resolve HOW this edit gets regenerated, and record it. The decision is
+        # language-dependent, so it must be stated rather than left implicit --
+        # see core/router.py.
+        has_words = any((e[4] or {}).get("granularity") == "word" for e in edits)
+        decision = edit_router.resolve(
+            state.get("language", "en"),
+            has_word_timings=has_words,
+            allow_nc=allow_nc,
+            available={"xtts": os.path.exists(VENV_VOICE_PY)},
+        )
+        state["routing"] = decision
+        print(f"[Transcript] Routing: {edit_router.describe(decision)}")
+        for warn in decision.get("warnings", []):
+            print(f"[Transcript] NOTE {warn}")
+
         saved = sum((e[2] - e[1]) for e in edits) / float(sr)
         total_changed_lines = len({e[0] for e in edits})
         line_dur = sum(float(segments[i]["end"]) - float(segments[i]["start"])
@@ -316,7 +345,10 @@ class TranscriptEngine(BaseEngine):
             clip_wav = self.voice.run(
                 text=new_text,
                 reference_audio_path=ref_path,
-                language=state["language"],
+                # The router already decided what we can actually synthesise in,
+                # and warned if that differs from the detected language.
+                language=decision.get("synthesis_language")
+                         or state.get("synthesis_language") or "en",
             )
             span, span_sr = dsp.load(clip_wav, mono=True)
             span = dsp.resample(span, span_sr, sr)
@@ -363,6 +395,21 @@ class TranscriptEngine(BaseEngine):
             track = dsp.limit_peak(track, ceiling_db=-0.5)
             print("[Transcript] Re-laid the untouched background stem.")
 
+        if scorecard:
+            try:
+                import evaluation
+                card = evaluation.score_all(
+                    track, sr,
+                    spans=[(r["splice"]["start"], r["splice"]["end"])
+                           for r in reports if r.get("splice")],
+                    reports=reports)
+                state["scorecard"] = card
+                for line in evaluation.summarise(card).splitlines():
+                    print(f"[Transcript] {line}")
+            except Exception as e:
+                # Measurement must never cost the operator their edit.
+                print(f"[Transcript] Scorecard unavailable ({e}).")
+
         new_audio = timestamp_file("edited_audio", "wav")
         dsp.save(new_audio, track, sr)
 
@@ -378,12 +425,15 @@ class TranscriptEngine(BaseEngine):
         state["lipsync_windows"] = edit_windows
 
         if windowed_lipsync and hasattr(self.lipsync, "run_windowed"):
+            ls_report = {}
             out = self.lipsync.run_windowed(
                 video_path=state["video"], audio_path=new_audio,
                 windows=edit_windows,
                 method=method, inference_steps=inference_steps,
                 guidance_scale=guidance_scale, progress=progress,
+                report=ls_report,
             )
+            state["lipsync"] = ls_report
         else:
             out = self.lipsync.run(
                 video_path=state["video"], audio_path=new_audio,

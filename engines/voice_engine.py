@@ -1,5 +1,5 @@
 """
-Voice cloning + multilingual TTS (English / Hindi) with XTTS-v2.
+Voice cloning + multilingual TTS with XTTS-v2 (17 languages).
 
 XTTS pins old transformers/torch that clash with the main SDXL env, so it runs
 inside `venv_voice` via a worker subprocess. This orchestrator just marshals
@@ -14,7 +14,17 @@ from core.subprocess_runner import run_worker
 
 WORKER = os.path.join(PROJECT_ROOT, "workers", "voice_worker.py")
 
-SUPPORTED_LANGUAGES = {"English": "en", "Hindi": "hi"}
+# XTTS-v2's full documented language set. Only English and Hindi were exposed
+# before, so an edit to Spanish or French audio was silently synthesised with
+# English pronunciation -- the model could always do better than the UI allowed.
+SUPPORTED_LANGUAGES = {
+    "English": "en",      "Spanish": "es",     "French": "fr",
+    "German": "de",       "Italian": "it",     "Portuguese": "pt",
+    "Polish": "pl",       "Turkish": "tr",     "Russian": "ru",
+    "Dutch": "nl",        "Czech": "cs",       "Arabic": "ar",
+    "Chinese": "zh-cn",   "Japanese": "ja",    "Hungarian": "hu",
+    "Korean": "ko",       "Hindi": "hi",
+}
 
 
 # A few built-in XTTS-v2 preset voices (male / female).

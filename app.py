@@ -111,43 +111,177 @@ def warn(msg): return f"<span class='status-warn'>⚠ {msg}</span>"
 
 
 # ── Feature: Transcript edit + relip ─────────────────────────────────────────
-def do_extract(video, progress=gr.Progress()):
+_TIER_COLOUR = {"A": "var(--ok)", "B": "var(--ok)",
+                "C": "var(--amber-deep)", "D": "var(--err)"}
+
+
+def _panel(title, rows):
+    """Small key/value panel. Rows are (label, html_value) pairs."""
+    body = "".join(
+        f"<div style='display:flex;gap:.6rem;padding:.15rem 0'>"
+        f"<span style='color:var(--muted);min-width:8.5rem;font-size:.78rem;"
+        f"text-transform:uppercase;letter-spacing:.04em'>{k}</span>"
+        f"<span style='color:var(--ink);font-size:.85rem'>{v}</span></div>"
+        for k, v in rows)
+    return (f"<div style='border:1px solid var(--border);border-radius:var(--radius);"
+            f"padding:.6rem .75rem;margin-top:.5rem;background:var(--card)'>"
+            f"<div class='section-label'>{title}</div>{body}</div>")
+
+
+def _routing_html(decision):
+    """What the router chose, and what it could not do. Never hide the gap."""
+    if not decision:
+        return ""
+    tier = decision.get("tier", "?")
+    col = _TIER_COLOUR.get(tier, "var(--muted)")
+    rows = [
+        ("Tier", f"<b style='color:{col}'>{tier}</b> — {decision.get('quality','')}"),
+        ("Engine", decision.get("label", "?")),
+        ("Granularity", decision.get("granularity", "?")),
+        ("Language", decision.get("language", "?")),
+    ]
+    best = decision.get("best_possible_tier")
+    if best and best != tier:
+        rows.append(("Ceiling",
+                     f"tier <b>{best}</b> is achievable for this language"))
+    for w in decision.get("warnings", []):
+        rows.append(("Note", f"<span style='color:var(--warn)'>{w}</span>"))
+    return _panel("Routing", rows)
+
+
+def _scorecard_html(card):
+    """Render the measured detectability metrics, including what was NOT measured."""
+    if not card:
+        return ""
+    overall = card.get("overall", "?")
+    col = "var(--ok)" if overall == "pass" else "var(--warn)"
+    rows = [("Overall", f"<b style='color:{col}'>{overall.upper()}</b>"),
+            ("Baseline", f"{card.get('n_natural_seams', 0)} genuine word "
+                         f"boundaries in this recording")]
+    for i, sp in enumerate(card.get("spans", []), 1):
+        seam = sp.get("seam", {})
+        pct = seam.get("percentile")
+        pct_txt = "—" if pct is None else f"{round(pct * 100)}th pct"
+        rows.append((f"Span {i}",
+                     f"{sp.get('span_sec','?')}s · seam {seam.get('worst_db','?')}dB "
+                     f"({pct_txt}, {seam.get('verdict','?')})"
+                     f" · loudness {sp.get('loudness',{}).get('delta_db','?')}dB"
+                     f" · tone {sp.get('tone',{}).get('distance_db','?')}dB"))
+    pend = card.get("pending") or []
+    if pend:
+        names = ", ".join(p["metric"] if isinstance(p, dict) else str(p)
+                          for p in pend)
+        rows.append(("Not measured",
+                     f"<span style='color:var(--muted)'>{names} — these need "
+                     f"models that are not installed</span>"))
+    return _panel("Detectability scorecard", rows)
+
+
+def _relip_report(state):
+    html = _routing_html(state.get("routing"))
+    html += _scorecard_html(state.get("scorecard"))
+    ls = state.get("lipsync")
+    if ls:
+        if ls.get("windowed"):
+            rows = [("Windows", f"{len(ls.get('windows', []))} region(s) re-rendered"),
+                    ("Coverage", f"{round(ls.get('coverage', 0.0) * 100, 2)}% of the "
+                                 f"video — the rest is the original footage, "
+                                 f"untouched")]
+        else:
+            rows = [("Mode", "whole video re-synced"),
+                    ("Why", ls.get("reason") or "windowing was not applicable")]
+        html += _panel("Lip-sync", rows)
+    return html or ""
+
+
+def _capability_html():
+    """The language/tier matrix. The achievable quality of an edit depends on the
+    language, so the operator has to be able to see that before recording."""
+    from core import router
+    rows = []
+    for lang, info in sorted(router.capability_table().items()):
+        col = _TIER_COLOUR.get(info["tier"], "var(--muted)")
+        gap = ("" if info["best_possible_tier"] == info["tier"]
+               else f"<span style='color:var(--muted)'> → {info['best_possible_tier']} "
+                    f"with {info['best_possible_engine']}</span>")
+        rows.append(
+            f"<tr><td style='padding:.15rem .6rem'><code>{lang}</code></td>"
+            f"<td style='padding:.15rem .6rem;color:{col};font-weight:600'>"
+            f"{info['tier']}</td>"
+            f"<td style='padding:.15rem .6rem;font-size:.82rem'>{info['engine']}"
+            f"{gap}</td></tr>")
+    return (
+        "<div style='font-size:.82rem;color:var(--muted);margin-bottom:.4rem'>"
+        "Tier A/B regenerate only the changed words. Tier C regenerates a "
+        "pause-bounded phrase and splices it in. Tier D cannot localise the edit "
+        "below a transcript line. Where a better tier is shown, the engine for it "
+        "is not installed.</div>"
+        "<table style='width:100%;border-collapse:collapse'><thead><tr>"
+        "<th style='text-align:left;padding:.15rem .6rem;color:var(--muted);"
+        "font-size:.75rem'>LANG</th>"
+        "<th style='text-align:left;padding:.15rem .6rem;color:var(--muted);"
+        "font-size:.75rem'>TIER</th>"
+        "<th style='text-align:left;padding:.15rem .6rem;color:var(--muted);"
+        "font-size:.75rem'>ENGINE</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table>")
+
+
+def do_extract(video, allow_nc=False, progress=gr.Progress()):
     if video is None:
-        return "", None, warn("Upload a video first")
+        return "", None, warn("Upload a video first"), ""
     GPU_LOCK.acquire()
     try:
         free_inprocess()
-        progress(0.3, desc="Transcribing (WhisperX) ...")
+        progress(0.3, desc="Transcribing (faster-whisper) ...")
         text, state = transcript.extract_transcript(video)
-        return text, state, ok(f"{len(state['segments'])} segments · "
-                               f"lang={state['language']}")
+        # Preview the routing decision now, so the operator learns what quality
+        # this language can reach BEFORE spending GPU time on the edit.
+        from core import router
+        from core.config import VENV_VOICE_PY
+        preview = router.resolve(
+            state.get("language", "en"),
+            has_word_timings=state.get("has_word_timings", False),
+            allow_nc=bool(allow_nc),
+            available={"xtts": os.path.exists(VENV_VOICE_PY)},
+        )
+        return (text, state,
+                ok(f"{len(state['segments'])} segments · "
+                   f"lang={state['language']} · tier {preview['tier']}"),
+                _routing_html(preview))
     except Exception as e:
-        return "", None, err(str(e))
+        return "", None, err(str(e)), ""
     finally:
         GPU_LOCK.release()
 
 
 def do_relip(state, edited_text, method, steps, guidance,
+             realism=True, word_level=True, separate="auto",
+             windowed=True, allow_nc=False, max_stretch=0.15,
              progress=gr.Progress()):
     if not state:
-        return None, warn("Extract a transcript first")
+        return None, warn("Extract a transcript first"), ""
     if not edited_text or not edited_text.strip():
-        return None, warn("Transcript is empty")
+        return None, warn("Transcript is empty"), ""
     GPU_LOCK.acquire()
     try:
         free_inprocess()
         method_map = {"LatentSync": "latentsync", "Wav2Lip": "wav2lip"}
         m = next((v for k, v in method_map.items() if method.startswith(k)),
                  "latentsync")
+        sep_map = {"Auto": "auto", "Always": True, "Never": False}
         out = transcript.apply_edits(
             state, edited_text,
             method=m,
             inference_steps=int(steps), guidance_scale=float(guidance),
+            realism=bool(realism), word_level=bool(word_level),
+            separate=sep_map.get(separate, "auto"),
+            windowed_lipsync=bool(windowed), allow_nc=bool(allow_nc),
+            max_stretch=float(max_stretch),
             progress=progress,
         )
-        return out, ok(os.path.basename(out))
+        return out, ok(os.path.basename(out)), _relip_report(state)
     except Exception as e:
-        return None, err(str(e))
+        return None, err(str(e)), _relip_report(state or {})
     finally:
         GPU_LOCK.release()
 
@@ -380,15 +514,57 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                               label="Diffusion steps")
                         ed_guid   = gr.Slider(1.0, 3.0, value=1.5, step=0.1,
                                               label="Guidance")
+                    with gr.Accordion("Realism & routing (advanced)", open=False):
+                        with gr.Row():
+                            ed_realism = gr.Checkbox(
+                                value=True, label="Match the splice to its surroundings",
+                                info="Duration fit, loudness / tone / room match, "
+                                     "room-tone injection, zero-crossing crossfade. "
+                                     "Off = raw splice, for A/B only.")
+                            ed_word = gr.Checkbox(
+                                value=True, label="Word-level edits",
+                                info="Replace only the changed words' region "
+                                     "instead of the whole transcript line.")
+                        with gr.Row():
+                            ed_windowed = gr.Checkbox(
+                                value=True, label="Re-sync only edited windows",
+                                info="Leaves untouched footage bit-identical and "
+                                     "cuts lip-sync time proportionally.")
+                            ed_sep = gr.Dropdown(
+                                ["Auto", "Always", "Never"], value="Auto",
+                                label="Separate background audio",
+                                info="Split speech from music/ambience first, edit "
+                                     "the speech, then remix. Needs venv_demucs.")
+                        with gr.Row():
+                            ed_stretch = gr.Slider(
+                                0.0, 0.30, value=0.15, step=0.01,
+                                label="Max time-stretch",
+                                info="How far a regenerated span may be stretched to "
+                                     "fit its slot before the edit is flagged "
+                                     "instead. Beyond ~15% becomes audible.")
+                            ed_nc = gr.Checkbox(
+                                value=False,
+                                label="Allow non-commercial engines",
+                                info="Permits CC-BY-NC models where they would give "
+                                     "a better tier. Off by default — licensing is "
+                                     "the operator's call, not a silent default.")
                     ed_relip = gr.Button("▶  Apply Edits & Re-sync", variant="primary")
                 with gr.Column(scale=1):
                     gr.HTML("<div class='section-label'>Output</div>")
                     ed_out = gr.Video(label="", elem_classes=["output-media"])
                     ed_status = gr.HTML(AWAIT)
-            ed_extract.click(do_extract, [ed_video], [ed_text, ed_state, ed_status])
+                    # The measurements are the point of the realism layer: an edit
+                    # that claims to be undetectable has to show its numbers.
+                    ed_report = gr.HTML("")
+                    with gr.Accordion("Language capability matrix", open=False):
+                        gr.HTML(_capability_html())
+            ed_extract.click(do_extract, [ed_video, ed_nc],
+                             [ed_text, ed_state, ed_status, ed_report])
             ed_relip.click(do_relip,
-                           [ed_state, ed_text, ed_method, ed_steps, ed_guid],
-                           [ed_out, ed_status])
+                           [ed_state, ed_text, ed_method, ed_steps, ed_guid,
+                            ed_realism, ed_word, ed_sep, ed_windowed, ed_nc,
+                            ed_stretch],
+                           [ed_out, ed_status, ed_report])
 
         # ── 02 Text → Image ─────────────────────────────────────────────────
         with gr.Tab("02 · Text → Image", id=1):
