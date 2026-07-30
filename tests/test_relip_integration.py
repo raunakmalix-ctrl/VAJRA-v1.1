@@ -111,15 +111,32 @@ eng = te.TranscriptEngine()
 eng.voice = StubVoice()
 eng.lipsync = StubLipsync()
 
+def with_words(text, start, end, pause_before=None):
+    """Evenly-spaced word timings across [start, end), with an optional longer
+    gap before one word index so pause-expansion has somewhere to cut."""
+    toks = text.split()
+    total = end - start
+    gap = 0.04
+    extra = 0.22 if pause_before is not None else 0.0
+    wdur = (total - gap * (len(toks) - 1) - extra) / len(toks)
+    words, t = [], start
+    for i, w in enumerate(toks):
+        if i > 0:
+            t += gap + (extra if i == pause_before else 0.0)
+        words.append({"word": w, "start": round(t, 4), "end": round(t + wdur, 4)})
+        t += wdur
+    return {"start": start, "end": end, "text": text, "words": words}
+
+
 state = {
     "video": "unused.mp4",
     "audio": audio_path,
     "language": "en",
     "segments": [
-        {"start": 0.5, "end": 2.0, "text": "the convoy will move at first light"},
-        {"start": 2.6, "end": 4.2, "text": "all units acknowledge the order"},
-        {"start": 5.0, "end": 6.6, "text": "maintain radio silence until then"},
-        {"start": 7.2, "end": 9.0, "text": "report status on arrival"},
+        with_words("the convoy will move at first light", 0.5, 2.0, pause_before=4),
+        with_words("all units acknowledge the order", 2.6, 4.2),
+        with_words("maintain radio silence until then", 5.0, 6.6, pause_before=3),
+        with_words("report status on arrival", 7.2, 9.0),
     ],
 }
 
@@ -159,6 +176,19 @@ rep = state["match_reports"][0]
 print("  report:", dsp.summarise(rep))
 s_, e_ = rep["splice"]["start"], rep["splice"]["end"]
 check("edited segment index recorded", rep["segment"] == 0)
+check("word-level granularity used", rep["granularity"] == "word",
+      str(rep["granularity"]))
+seg0 = state["segments"][0]
+span_dur = (e_ - s_) / SR
+line_dur = seg0["end"] - seg0["start"]
+check("regenerated less audio than the whole line", span_dur < line_dur * 0.8,
+      f"{span_dur:.2f}s of {line_dur:.2f}s")
+check("cloning reference chosen automatically", "reference_info" in state,
+      str(state.get("reference_info", {}).get("selected")))
+ri = state["reference_info"]
+check("reference avoids the edited span (incl. snap margin)",
+      not (ri["start_sec"] < e_ / SR and ri["end_sec"] > s_ / SR),
+      f"ref {ri['start_sec']}-{ri['end_sec']} vs edit {s_/SR:.2f}-{e_/SR:.2f}")
 check("spectral stage ran", rep["spectral"]["applied"])
 check("loudness stage ran", "gain_db" in rep["loudness"])
 check("room tone harvested", rep["room_tone"]["found_sec"] > 0.2,
@@ -190,12 +220,17 @@ d_new = dsp.loudness_delta_db(span_out, nb, SR)
 check("loudness closer to neighbours than raw", d_new < d_raw,
       f"raw={d_raw:.2f}dB -> {d_new:.2f}dB")
 
-f_raw = dsp.estimate_noise_floor_db(raw_fit, SR)
-f_new = dsp.estimate_noise_floor_db(span_out, SR)
+# Noise floor: a sub-second span of continuous speech has no silence, so
+# re-measuring its "floor" returns quiet speech, not noise (see
+# dsp/noisefloor.measure_floor). Assert on what the stage controls -- that a bed
+# was laid at the neighbourhood's floor level -- rather than on a meaningless
+# re-measurement.
+nf = rep["noise_floor"]
 f_ref = dsp.estimate_noise_floor_db(nb, SR)
-check("noise floor closer to neighbours than raw",
-      abs(f_new - f_ref) < abs(f_raw - f_ref),
-      f"raw={f_raw:.1f} new={f_new:.1f} target={f_ref:.1f}")
+check("room tone laid at the neighbourhood floor level",
+      nf["applied"] and abs(nf["target_floor_db"] - f_ref) < 1.0,
+      f"bed target={nf.get('target_floor_db')} neighbourhood={f_ref:.1f}")
+check("bed level derived, not guessed", "bed_gain_db" in nf, str(nf))
 check("no clipping", dsp.peak(new_track) <= 1.0, f"peak={dsp.peak(new_track):.4f}")
 
 print()

@@ -2,11 +2,15 @@
 Feature 2 — transcript-driven lip editing.
 
 Flow:
-  1. extract_transcript(video): pull audio, run WhisperX for segment + word
-     timestamps, return an editable transcript (one segment per line).
-  2. apply_edits(state, edited_text, ...): for each line the user changed,
-     re-synthesize just that segment in the speaker's own cloned voice (XTTS),
-     then run it through the dsp realism layer -- duration fit, spectral/room/
+  1. extract_transcript(video): pull audio, transcribe with segment AND word
+     timestamps, return an editable transcript (one segment per line). The word
+     timings are what make step 2 surgical.
+  2. apply_edits(state, edited_text, ...): diff each edited line at word level
+     (core/textdiff.py) so only the region covering changed words is replaced,
+     choose the cleanest window of the recording as the cloning reference
+     (dsp/reference.py), then for each resolved span
+     re-synthesize it in the speaker's own cloned voice (XTTS)
+     and run it through the dsp realism layer -- duration fit, spectral/room/
      loudness match against the surrounding real audio, room-tone injection and
      a zero-crossing crossfade -- before splicing it in. Total length is
      preserved so the track stays frame-aligned, then the video's lips are
@@ -99,14 +103,36 @@ class TranscriptEngine(BaseEngine):
             raise RuntimeError(f"Transcription failed: {last_err}")
 
         segments = []
+        n_words = 0
         for s in raw:
             text = (s.text or "").strip()
-            if text:
-                segments.append({
-                    "start": float(s.start), "end": float(s.end), "text": text,
-                })
+            if not text:
+                continue
+            # Keep the word timings. They were previously discarded, which forced
+            # every edit to regenerate a whole line; with them, only the changed
+            # words' region has to be replaced (see core/textdiff.py).
+            words = []
+            for w in (getattr(s, "words", None) or []):
+                wt = (getattr(w, "word", "") or "").strip()
+                ws, we = getattr(w, "start", None), getattr(w, "end", None)
+                if wt and ws is not None and we is not None:
+                    words.append({"word": wt, "start": float(ws),
+                                  "end": float(we),
+                                  "prob": float(getattr(w, "probability", 0.0) or 0.0)})
+            n_words += len(words)
+            segments.append({
+                "start": float(s.start), "end": float(s.end), "text": text,
+                "words": words,
+            })
         if not segments:
             raise RuntimeError("No speech detected in the video.")
+
+        if n_words:
+            print(f"[Transcript] {len(segments)} segments, {n_words} word timings "
+                  f"-- word-level editing available.")
+        else:
+            print(f"[Transcript] {len(segments)} segments but NO word timings; "
+                  f"edits will regenerate whole lines.")
 
         display = "\n".join(s["text"] for s in segments)
         xtts_lang = lang if lang in _XTTS_LANGS else "en"
@@ -124,7 +150,8 @@ class TranscriptEngine(BaseEngine):
     # ── step 2 ────────────────────────────────────────────────────────────────
     def apply_edits(self, state, edited_text, method="latentsync",
                     inference_steps=20, guidance_scale=1.5, progress=None,
-                    realism=True, max_stretch=None):
+                    realism=True, max_stretch=None, word_level=True,
+                    auto_reference=True):
         """Re-voice only the changed lines and splice them back in.
 
         realism: run the dsp match chain (duration fit, spectral/room/loudness
@@ -132,11 +159,21 @@ class TranscriptEngine(BaseEngine):
         span. This is what makes an edit inaudible rather than merely correct --
         see dsp/ for why each stage exists. Set False only to A/B against the
         unmatched splice.
+
+        word_level: resolve edits per word and regenerate only the affected
+        region rather than the whole line. Falls back automatically when a
+        segment has no word timings.
+
+        auto_reference: choose the cleanest window of the recording as the
+        cloning reference instead of handing the model the whole track. Reference
+        quality dominates clone quality more than any inference setting.
         """
         if not state:
             raise ValueError("Extract a transcript first.")
 
         import dsp
+        from dsp import reference as dspref
+        from core import textdiff
 
         segments = state["segments"]
         new_lines = [l.strip() for l in edited_text.split("\n")]
@@ -155,16 +192,61 @@ class TranscriptEngine(BaseEngine):
         def _clamp(t):
             return int(min(max(int(round(float(t) * sr)), 0), n))
 
-        # Resolve which lines actually changed before touching any audio.
+        # Resolve edits at WORD level: only the region covering changed words is
+        # regenerated, expanded outward to the nearest pause so the synthesiser
+        # still receives a natural phrase. Lines without word timings fall back
+        # to whole-line replacement, reported via each span's 'granularity'.
         edits = []
         for i, seg in enumerate(segments):
             new_text = new_lines[i] if i < len(new_lines) else seg["text"]
-            if new_text and new_text != seg["text"]:
-                edits.append((i, _clamp(seg["start"]), _clamp(seg["end"]),
-                              new_text))
+            spans = textdiff.resolve_edit_spans(
+                seg, new_text, expand_to_pauses=word_level)
+            if spans:
+                print(f"[Transcript] segment {i+1}: "
+                      f"{textdiff.summarise_spans(spans, seg)}")
+            for sp in spans:
+                edits.append((i, _clamp(sp["t_start"]), _clamp(sp["t_end"]),
+                              sp["text"], sp))
+
+        # Drop any span that collapsed to nothing after clamping.
+        edits = [e for e in edits if e[2] > e[1]]
 
         if not edits:
             raise ValueError("No changes detected in the transcript.")
+
+        saved = sum((e[2] - e[1]) for e in edits) / float(sr)
+        total_changed_lines = len({e[0] for e in edits})
+        line_dur = sum(float(segments[i]["end"]) - float(segments[i]["start"])
+                       for i in {e[0] for e in edits})
+        if line_dur > 0:
+            print(f"[Transcript] regenerating {saved:.2f}s across "
+                  f"{len(edits)} span(s) instead of {line_dur:.2f}s of whole "
+                  f"lines ({100.0 * saved / line_dur:.0f}% as much audio) "
+                  f"across {total_changed_lines} edited line(s).")
+
+        # Pick the cloning reference deliberately instead of handing the model
+        # the entire original track. Reference quality dominates clone quality,
+        # and the regions being replaced are excluded so the synthesiser is never
+        # conditioned on the audio it is meant to be replacing.
+        ref_path = state.get("audio")
+        if auto_reference:
+            speech_ranges = [(float(s["start"]), float(s["end"]))
+                             for s in segments]
+            # Pad the excluded ranges: the splice stage snaps each boundary to a
+            # nearby quiet point later on, so a span can grow by up to the snap
+            # search window after the reference has already been chosen. Without
+            # this margin the reference can end up abutting -- and overlapping --
+            # the very audio it must not be conditioned on.
+            guard = int(0.25 * sr)
+            ref_clip, ref_info = dspref.pick_reference(
+                track, sr,
+                exclude_ranges=[(max(0, s - guard), min(n, e + guard))
+                                for _, s, e, _, _ in edits],
+                speech_ranges=speech_ranges)
+            ref_path = timestamp_file("clone_reference", "wav")
+            dsp.save(ref_path, ref_clip, sr)
+            state["reference_info"] = ref_info
+            print(f"[Transcript] Cloning reference: {dspref.describe(ref_info)}")
 
         # Harvest room tone ONCE from the original, excluding every span that is
         # about to be replaced -- a span's own audio must not contribute the tone
@@ -173,7 +255,7 @@ class TranscriptEngine(BaseEngine):
         tone_info = {"found_sec": 0.0, "reason": "realism disabled"}
         if realism:
             room_tone, tone_info = dsp.extract_room_tone(
-                track, sr, exclude_ranges=[(s, e) for _, s, e, _ in edits])
+                track, sr, exclude_ranges=[(s, e) for _, s, e, _, _ in edits])
             if room_tone.size == 0:
                 room_tone = None
                 print("[Transcript] No usable room tone found in the source; "
@@ -186,14 +268,14 @@ class TranscriptEngine(BaseEngine):
                    else float(max_stretch))
         reports = []
 
-        for k, (i, start, end, new_text) in enumerate(edits):
+        for k, (i, start, end, new_text, span_meta) in enumerate(edits):
             if progress is not None:
                 progress(k / max(len(edits), 1),
                          desc=f"Re-voicing edit {k+1}/{len(edits)}")
 
             clip_wav = self.voice.run(
                 text=new_text,
-                reference_audio_path=state["audio"],
+                reference_audio_path=ref_path,
                 language=state["language"],
             )
             span, span_sr = dsp.load(clip_wav, mono=True)
@@ -212,6 +294,9 @@ class TranscriptEngine(BaseEngine):
 
             rep["segment"] = i
             rep["text"] = new_text
+            rep["granularity"] = span_meta.get("granularity")
+            rep["orig_text"] = span_meta.get("orig_text")
+            rep["span_expanded"] = span_meta.get("expanded")
             # Tone was harvested once up front, so match_and_splice never saw a
             # None to fill in -- record it here to keep each report complete.
             rep.setdefault("room_tone", tone_info)
