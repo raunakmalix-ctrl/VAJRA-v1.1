@@ -30,7 +30,9 @@ class QwenEditEngine(BaseEngine):
             raise ValueError("Describe the edit.")
         if not os.path.exists(VENV_QWEN_PY):
             raise RuntimeError(
-                "venv_qwen missing — run setup/make_qwen_venv.sh first "
+                "Image Edit environment not built. In the notebook, set "
+                "QWEN = True in Step 6 and run that cell "
+                "(or: bash setup/make_venvs.sh qwen). "
                 "(Qwen-Image-Edit is an optional, heavy add-on)."
             )
 

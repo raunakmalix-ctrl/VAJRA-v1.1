@@ -29,8 +29,9 @@ class MotionVideoEngine(BaseEngine):
             raise ValueError("Prompt cannot be empty.")
         if not os.path.exists(VENV_WAN_PY):
             raise RuntimeError(
-                "venv_wan missing — run setup/make_wan_venv.sh first "
-                "(Wan2.2-I2V is an optional, heavy add-on)."
+                "Wan2.2-I2V environment not built. In the notebook, set "
+                "WAN = True in Step 6 and run that cell "
+                "(or: bash setup/make_venvs.sh wan)."
             )
 
         out_path = timestamp_file("motion", "mp4")

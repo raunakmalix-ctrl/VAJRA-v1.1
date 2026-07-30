@@ -29,8 +29,9 @@ class LTX2Engine(BaseEngine):
             raise ValueError("Prompt cannot be empty.")
         if not os.path.exists(VENV_LTX2_PY):
             raise RuntimeError(
-                "venv_ltx2 missing — run setup/make_ltx2_venv.sh first "
-                "(LTX 2.3 is an optional, heavy add-on)."
+                "LTX 2.3 environment not built. In the notebook, set "
+                "LTX2 = True in Step 6 and run that cell "
+                "(or: bash setup/make_venvs.sh ltx2)."
             )
 
         out_path = timestamp_file("ltx2", "mp4")

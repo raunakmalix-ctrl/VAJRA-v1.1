@@ -113,19 +113,82 @@ def latentsync():
     _link_tree(LATENTSYNC_WEIGHTS_DIR, ckpt_dir)
 
 
-def main():
-    step("XTTS-v2 (voice clone)", xtts)
-    step("inswapper_128 (face swap)", inswapper)
-    step("GFPGAN v1.4 (enhance)", gfpgan)
-    step("Wav2Lip GAN (lip-sync fallback)", wav2lip)
-    step("LatentSync 1.5 (lip re-sync)", latentsync)
-    print("\nAll downloads attempted. MODEL_ROOT =", MODEL_ROOT)
+# Download groups, keyed by the module that needs them. Fetching everything
+# costs many gigabytes and many minutes; most sessions exercise one or two
+# modules, so the operator can request only what they intend to run.
+#
+#   python setup/download_models.py                  # all (default)
+#   python setup/download_models.py voice lipsync    # Edit & Relip
+#   python setup/download_models.py faceswap         # Face Swap
+GROUPS = {
+    "voice":    [("XTTS-v2 (voice clone)", xtts)],
+    "lipsync":  [("LatentSync 1.5 (lip re-sync)", latentsync),
+                 ("Wav2Lip GAN (lip-sync fallback)", wav2lip)],
+    "faceswap": [("inswapper_128 (face swap)", inswapper),
+                 ("GFPGAN v1.4 (enhance)", gfpgan)],
+}
+
+# Which groups each module needs. Modules absent from this map need no
+# pre-downloaded weights -- they fetch on first use.
+MODULE_GROUPS = {
+    "relip":     ["voice", "lipsync"],
+    "faceswap":  ["faceswap"],
+    "txt2img":   [],   # SDXL/RealVisXL fetches on first use
+    "txt2vid":   [],   # LTX-2.3 / Wan2.2 fetch inside their own environments
+    "imageedit": [],   # Qwen-Image-Edit fetches inside its own environment
+    "media":     [],   # no models
+}
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__)
+        print("groups :", " ".join(GROUPS))
+        print("modules:", " ".join(MODULE_GROUPS))
+        return 0
+
+    if not argv or "all" in argv:
+        wanted = list(GROUPS)
+    else:
+        wanted = []
+        for a in argv:
+            key = a.lower().lstrip("-")
+            if key in GROUPS:
+                wanted.append(key)
+            elif key in MODULE_GROUPS:
+                wanted.extend(MODULE_GROUPS[key])
+            else:
+                print(f"!! unknown target '{a}'.")
+                print("   groups :", " ".join(GROUPS))
+                print("   modules:", " ".join(MODULE_GROUPS))
+                return 2
+        # de-duplicate, preserve order
+        seen, uniq = set(), []
+        for g in wanted:
+            if g not in seen:
+                seen.add(g); uniq.append(g)
+        wanted = uniq
+
+    if not wanted:
+        print("Nothing to download for the requested target(s) — those modules "
+              "fetch their weights on first use.")
+        return 0
+
+    print("Downloading groups:", " ".join(wanted))
+    for g in wanted:
+        for name, fn in GROUPS[g]:
+            step(name, fn)
+
+    print("\nDownloads attempted. MODEL_ROOT =", MODEL_ROOT)
     if not HF_TOKEN:
         print("NOTE: HF_TOKEN not set. The defaults (SDXL Realistic, Qwen-Image-Edit) "
               "need no token. If Wan2.2-I2V or LTX 2.3 (Text -> Video's photo-"
               "animation engines) fail to load, check whether their HF repos "
               "require accepting a license.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

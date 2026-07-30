@@ -29,7 +29,11 @@ class LipSyncEngine(BaseEngine):
             raise FileNotFoundError(f"Audio not found: {audio_path}")
 
         if not os.path.exists(VENV_LATENTSYNC_PY):
-            raise RuntimeError("venv_latentsync missing — run setup/make_venvs.sh")
+            raise RuntimeError(
+                "Lip-sync environment not built. In the notebook, set "
+                "LIPSYNC = True in Step 6 and run that cell "
+                "(or: bash setup/make_venvs.sh lipsync)."
+            )
 
         wav_path, is_tmp = to_wav(audio_path)
         tmp = [wav_path] if is_tmp else []

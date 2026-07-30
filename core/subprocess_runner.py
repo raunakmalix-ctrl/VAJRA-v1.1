@@ -51,6 +51,33 @@ def warn_low_disk(min_gb, label="this model"):
         )
 
 
+# venv directory name -> (Step 6 notebook flag, make_venvs.sh target, module)
+_ENV_HINTS = {
+    "venv_voice":      ("VOICE",   "voice",   "Edit & Relip (voice cloning)"),
+    "venv_latentsync": ("LIPSYNC", "lipsync", "Edit & Relip (lip re-sync)"),
+    "venv_wan":        ("WAN",     "wan",     "Text -> Video (Wan2.2-I2V)"),
+    "venv_qwen":       ("QWEN",    "qwen",    "Image Edit"),
+    "venv_ltx2":       ("LTX2",    "ltx2",    "Text -> Video (LTX 2.3)"),
+}
+
+
+def _missing_env_message(venv_python):
+    """Name the exact flag to enable. Environments are built selectively, so a
+    missing one is an expected state, not a fault -- the message has to tell
+    the operator precisely what to switch on rather than dump a path."""
+    name = os.path.basename(os.path.dirname(os.path.dirname(venv_python)))
+    hint = _ENV_HINTS.get(name)
+    if hint:
+        flag, target, module = hint
+        return (
+            f"The environment for {module} is not built yet. "
+            f"In the notebook, set {flag} = True in Step 6 and run that cell "
+            f"(or: bash setup/make_venvs.sh {target})."
+        )
+    return (f"Isolated environment not built: {name}. "
+            f"Build it from Step 6 in the notebook.")
+
+
 def _diagnose(stdout, stderr):
     """Translate a worker's raw failure into one actionable sentence for the UI.
     Returns None when the failure isn't a known pattern (caller keeps detail)."""
@@ -101,10 +128,7 @@ def run_worker(venv_python, worker_script, args: dict,
     Raises RuntimeError with captured stderr on failure.
     """
     if not os.path.exists(venv_python):
-        raise RuntimeError(
-            f"venv interpreter not found: {venv_python}\n"
-            f"Run setup/make_venvs.sh first."
-        )
+        raise RuntimeError(_missing_env_message(venv_python))
     if not os.path.exists(worker_script):
         raise RuntimeError(f"worker script not found: {worker_script}")
 
