@@ -206,11 +206,31 @@ class TranscriptEngine(BaseEngine):
         }
         return display, state
 
+    def transcribe_audio(self, audio_path):
+        """Plain transcript for an audio file, with no editing state.
+
+        The Voice Edit tab needs the original wording to align against, and
+        asking an operator to type out what they can already hear is busywork
+        that also invites transcription errors the aligner would then act on.
+        Separate from extract_transcript because that one normalises video and
+        builds the whole edit state, none of which applies to a bare clip.
+        """
+        if not audio_path or not os.path.exists(audio_path):
+            raise ValueError("No audio supplied.")
+        wav = _extract_audio(audio_path)
+        prefer = os.environ.get("WHISPER_DEVICE", "cpu")
+        model = _load_whisper("cuda" if prefer == "cuda" else "cpu")
+        seg_iter, _info = model.transcribe(wav, vad_filter=True)
+        text = " ".join((s.text or "").strip() for s in seg_iter).strip()
+        if not text:
+            raise RuntimeError("No speech detected in that audio.")
+        return text
+
     # ── step 2 ────────────────────────────────────────────────────────────────
     def apply_edits(self, state, edited_text, method="latentsync",
                     inference_steps=20, guidance_scale=1.5, progress=None,
                     realism=True, max_stretch=None, word_level=True,
-                    auto_reference=True, separate="auto",
+                    auto_reference=True, separate=False,
                     windowed_lipsync=True, allow_nc=False,
                     scorecard=True, prefer_tier=None):
         """Re-voice only the changed lines and splice them back in.
@@ -499,7 +519,21 @@ class TranscriptEngine(BaseEngine):
                                  escalated=True)
                 escalated.add(i)
 
-            if realism:
+            # The disguise chain exists because a sentence synthesiser cannot
+            # hear the recording it is editing, so its output has to be pushed
+            # into place: spectrum corrected, room convolved on, a noise bed laid
+            # under it. A tier A infill model already heard that audio, so its
+            # output is ALREADY in place -- running the chain over it stacks
+            # correction on something that needs none and audibly dirties the
+            # span. Keep only the two stages that are about fitting a timeline,
+            # not about disguise.
+            if realism and decision["tier"] == "A":
+                track, rep = dsp.match_and_splice(
+                    track, span, start, end, sr,
+                    room_tone=None, max_stretch=stretch,
+                    spectral_strength=0.0, room_strength=0.0)
+                rep["disguise"] = "skipped — tier A output is already in place"
+            elif realism:
                 track, rep = dsp.match_and_splice(
                     track, span, start, end, sr,
                     room_tone=room_tone, max_stretch=stretch)

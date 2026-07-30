@@ -208,39 +208,6 @@ def _relip_report(state):
     return html or ""
 
 
-def _capability_html():
-    """The language/tier matrix. The achievable quality of an edit depends on the
-    language, so the operator has to be able to see that before recording."""
-    from core import router
-    rows = []
-    for lang, info in sorted(
-            router.capability_table(available=_engine_availability()).items()):
-        col = _TIER_COLOUR.get(info["tier"], "var(--muted)")
-        gap = ("" if info["best_possible_tier"] == info["tier"]
-               else f"<span style='color:var(--muted)'> → {info['best_possible_tier']} "
-                    f"with {info['best_possible_engine']}</span>")
-        rows.append(
-            f"<tr><td style='padding:.15rem .6rem'><code>{lang}</code></td>"
-            f"<td style='padding:.15rem .6rem;color:{col};font-weight:600'>"
-            f"{info['tier']}</td>"
-            f"<td style='padding:.15rem .6rem;font-size:.82rem'>{info['engine']}"
-            f"{gap}</td></tr>")
-    return (
-        "<div style='font-size:.82rem;color:var(--muted);margin-bottom:.4rem'>"
-        "Tier A/B regenerate only the changed words. Tier C regenerates a "
-        "pause-bounded phrase and splices it in. Tier D cannot localise the edit "
-        "below a transcript line. Where a better tier is shown, the engine for it "
-        "is not installed.</div>"
-        "<table style='width:100%;border-collapse:collapse'><thead><tr>"
-        "<th style='text-align:left;padding:.15rem .6rem;color:var(--muted);"
-        "font-size:.75rem'>LANG</th>"
-        "<th style='text-align:left;padding:.15rem .6rem;color:var(--muted);"
-        "font-size:.75rem'>TIER</th>"
-        "<th style='text-align:left;padding:.15rem .6rem;color:var(--muted);"
-        "font-size:.75rem'>ENGINE</th></tr></thead><tbody>"
-        + "".join(rows) + "</tbody></table>")
-
-
 def do_extract(video, allow_nc=False, progress=gr.Progress()):
     if video is None:
         return "", "", None, None, warn("Upload a video first"), ""
@@ -318,6 +285,26 @@ def _viitor_guard():
     if not viitor_engine.available():
         return viitor_engine._unavailable_message()
     return None
+
+
+def do_voice_transcribe(audio, progress=gr.Progress()):
+    """Fill the original-transcript box from the uploaded clip.
+
+    Asking an operator to type out what they can already hear is busywork, and
+    it invites transcription errors that the aligner would then act on.
+    """
+    if audio is None:
+        return "", warn("Upload the audio first")
+    GPU_LOCK.acquire()
+    try:
+        progress(0.3, desc="Transcribing ...")
+        text = transcript.transcribe_audio(audio)
+        return text, ok(f"{len(text.split())} words — check it, then edit "
+                        f"on the right")
+    except Exception as e:
+        return "", err(str(e))
+    finally:
+        GPU_LOCK.release()
 
 
 def do_voice_edit(audio, original_text, edited_text, mask_ratio,
@@ -638,10 +625,13 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                 info="Leaves untouched footage bit-identical and "
                                      "cuts lip-sync time proportionally.")
                             ed_sep = gr.Dropdown(
-                                ["Auto", "Always", "Never"], value="Auto",
+                                ["Never", "Auto", "Always"], value="Never",
                                 label="Separate background audio",
-                                info="Split speech from music/ambience first, edit "
-                                     "the speech, then remix. Needs venv_demucs.")
+                                info="Split speech from music/ambience first, "
+                                     "edit the speech, then remix. Off by "
+                                     "default: it is a lossy round-trip through "
+                                     "a separation model, worth it only when "
+                                     "there is real background to protect.")
                         with gr.Row():
                             ed_stretch = gr.Slider(
                                 0.0, 0.30, value=0.15, step=0.01,
@@ -682,11 +672,12 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                         ed_new_audio = gr.Audio(
                             label="Edited audio", type="filepath",
                             interactive=False)
-                    # The measurements are the point of the realism layer: an edit
-                    # that claims to be undetectable has to show its numbers.
-                    ed_report = gr.HTML("")
-                    with gr.Accordion("Language capability matrix", open=False):
-                        gr.HTML(_capability_html())
+                    # The measurements still matter, but they are diagnostics:
+                    # collapsed by default so the tab leads with the result, and
+                    # one click away when an edit needs explaining.
+                    with gr.Accordion("Routing & detectability report",
+                                      open=False):
+                        ed_report = gr.HTML("")
             ed_extract.click(do_extract, [ed_video, ed_nc],
                              [ed_orig, ed_text, ed_state, ed_src_audio,
                               ed_status, ed_report])
@@ -721,11 +712,16 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                             gr.HTML("<div class='section-label'>Source</div>")
                             ve_audio = gr.Audio(label="Audio to edit",
                                                 type="filepath")
+                            ve_extract = gr.Button(
+                                "◐  Extract transcript", size="sm",
+                                variant="secondary")
                             ve_orig = gr.Textbox(
                                 label="Original transcript \u2014 what the "
                                       "audio actually says", lines=4,
-                                placeholder="The model aligns this against the "
-                                            "audio to locate the edit.")
+                                placeholder="Click Extract transcript above, "
+                                            "or type it. The model aligns this "
+                                            "against the audio to locate the "
+                                            "edit.")
                             ve_new = gr.Textbox(
                                 label="Edited text \u2014 change only what you "
                                       "want re-spoken", lines=4)
@@ -749,6 +745,11 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                               type="filepath",
                                               interactive=False)
                             ve_status = gr.HTML(AWAIT)
+                    ve_extract.click(do_voice_transcribe, [ve_audio],
+                                     [ve_orig, ve_status])
+                    # Seed the edited side from the original, so the operator
+                    # changes words instead of retyping the whole line.
+                    ve_orig.change(lambda t: t, [ve_orig], [ve_new])
                     ve_go.click(do_voice_edit,
                                 [ve_audio, ve_orig, ve_new, ve_mask, ve_gran],
                                 [ve_out, ve_status])

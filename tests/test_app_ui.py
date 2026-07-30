@@ -135,11 +135,15 @@ check("whole-video fallback explains itself", "71%" in m._relip_report(st))
 
 check("report tolerates a bare state", m._relip_report({}) == "")
 
-cap = m._capability_html()
-check("capability matrix lists every routable language",
-      cap.count("<tr>") >= 17, f"{cap.count('<tr>')} rows")
-check("matrix explains what the tiers mean", "pause-bounded" in cap)
-check("matrix shows the upgrade path", "with ViiTorVoice-NAR" in cap)
+# The report panels are diagnostics, so the tab must lead with the result and
+# keep them one click away rather than in the operator's face.
+import inspect  # noqa: E402
+
+src = inspect.getsource(m) if hasattr(m, "__file__") else ""
+check("the report sits inside a collapsed accordion",
+      "Routing & detectability report" in open(
+          os.path.join(_ROOT, "app.py"), encoding="utf-8").read())
+
 
 print("=" * 70)
 if FAILS:

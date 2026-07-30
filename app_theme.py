@@ -222,6 +222,13 @@ label,.gr-label,.block-title,span[data-testid="block-info"]{
 input[type=radio]+span,input[type=checkbox]+span{
   color:var(--ink)!important; text-transform:none!important;
   letter-spacing:normal!important; font-size:.85rem!important;}
+/* A non-interactive textbox (the Original transcript pane) is still content to
+   be READ. Gradio greys it out, which disappears against the dark card, so the
+   contrast is restored explicitly in both themes. */
+textarea[disabled],textarea:disabled,textarea[readonly],
+input[disabled],input:disabled,input[readonly]{
+  color:var(--ink)!important; -webkit-text-fill-color:var(--ink)!important;
+  opacity:1!important;}
 textarea,input[type=text],input[type=number],select,.gr-input,.gr-text-input{
   background:var(--bg-soft)!important; border:1px solid var(--border-strong)!important;
   border-radius:var(--radius)!important; color:var(--ink)!important;

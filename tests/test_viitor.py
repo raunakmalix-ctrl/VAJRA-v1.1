@@ -184,6 +184,47 @@ check("weights are pointed under MODEL_ROOT, so USE_DRIVE persists them",
 check("health check does not raise when nothing is listening",
       VE._health(timeout=0.4) is False)
 
+print()
+print("=" * 74)
+print("outputs are identifiable as VAJRA artefacts")
+print("=" * 74)
+from core.utils import timestamp_file, OUTPUT_PREFIX  # noqa: E402
+
+for stem in ("viitor_clone", "relip", "edited_audio", "extracted"):
+    name = os.path.basename(timestamp_file(stem, "wav"))
+    check(f"'{stem}' output is prefixed", name.startswith(OUTPUT_PREFIX + "_"),
+          name)
+    check(f"'{stem}' keeps what it is", stem.split("_")[-1] in name, name)
+already = os.path.basename(timestamp_file("vajra_edit", "wav"))
+check("an already-prefixed stem is not doubled",
+      already.count("vajra") == 1, already)
+check("extension preserved", timestamp_file("x", "mp4").endswith(".mp4"))
+
+print()
+print("=" * 74)
+print("tier A output skips the disguise chain")
+print("=" * 74)
+# The chain exists to push a sentence synthesiser's output into a recording it
+# never heard. Tier A output was produced FROM that recording, so correcting it
+# again stacks processing on audio that needs none.
+eng_src = open(os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "engines", "transcript_engine.py"), encoding="utf-8").read()
+check("tier A is branched separately at splice time",
+      'if realism and decision["tier"] == "A":' in eng_src)
+check("spectral correction is disabled for tier A",
+      "spectral_strength=0.0" in eng_src)
+check("room convolution is disabled for tier A",
+      "room_strength=0.0" in eng_src)
+check("no room tone is injected under tier A output",
+      "room_tone=None, max_stretch=stretch" in eng_src)
+check("the skip is recorded in the report",
+      'rep["disguise"]' in eng_src)
+check("tier C still gets the full chain",
+      "room_tone=room_tone, max_stretch=stretch" in eng_src)
+check("separation is off by default",
+      'separate=False,' in eng_src)
+
 print("=" * 74)
 if FAILS:
     print(f"{len(FAILS)} FAILURE(S):")

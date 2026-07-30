@@ -6,11 +6,20 @@ import subprocess
 from core.config import OUTPUTS_DIR, FFMPEG_PATH, FFPROBE_PATH
 
 
+# Every artefact this app produces carries one prefix, so a downloaded file is
+# identifiable as VAJRA output without needing the folder it came from. Applied
+# here rather than at each call site so no engine can forget it.
+OUTPUT_PREFIX = "vajra"
+
+
 def timestamp_file(prefix, ext):
     """Return a timestamped path inside OUTPUTS_DIR."""
     os.makedirs(OUTPUTS_DIR, exist_ok=True)
     ts = time.strftime("%Y%m%d_%H%M%S_") + str(int(time.time() * 1000) % 1000)
-    return os.path.join(OUTPUTS_DIR, f"{prefix}_{ts}.{ext}")
+    stem = str(prefix or "output").strip("_")
+    if not stem.startswith(OUTPUT_PREFIX):
+        stem = f"{OUTPUT_PREFIX}_{stem}"
+    return os.path.join(OUTPUTS_DIR, f"{stem}_{ts}.{ext}")
 
 
 def to_wav(audio_path, sr=16000, channels=1):
