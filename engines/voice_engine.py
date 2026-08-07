@@ -38,6 +38,7 @@ PRESET_VOICES = {
 }
 
 
+
 class VoiceEngine(BaseEngine):
 
     def run(self, text, reference_audio_path=None, language="en", speaker=None):
@@ -48,6 +49,10 @@ class VoiceEngine(BaseEngine):
                 raise FileNotFoundError("Provide a reference audio to clone, or pick a preset voice.")
 
         out_path = timestamp_file("voice", "wav")
+        # Digits are expanded inside the worker, not here: the expansion wants
+        # num2words, which lives in venv_voice rather than the principal
+        # runtime. Doing it here would silently fall back to reading numbers
+        # digit by digit even for languages num2words handles properly.
         return run_worker(
             VENV_VOICE_PY, WORKER,
             {

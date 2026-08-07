@@ -359,6 +359,22 @@ class TranscriptEngine(BaseEngine):
             available={"xtts": os.path.exists(VENV_VOICE_PY),
                        "viitor_nar": viitor_engine.available()},
         )
+        # The router only knows whether the edit COULD be localised, so on its
+        # own it reports "no word-level timings for this segment" -- which is
+        # actively wrong when the timings exist and the edit was simply too
+        # extensive to localise. Replace that with what actually happened, or
+        # the log contradicts the extraction step two lines above it.
+        if state.get("has_word_timings") and not has_words:
+            decision["warnings"] = [
+                w.replace(
+                    "No word-level timings for this segment, so the edit "
+                    "covers the whole transcript line. Precision is reduced.",
+                    "Word timings exist, but every edited line changed too "
+                    "extensively to localise below the line, so whole lines "
+                    "were regenerated. Change fewer words per line to keep "
+                    "more of the original recording.")
+                for w in decision.get("warnings", [])
+            ]
         state["routing"] = decision
         print(f"[Transcript] Routing: {edit_router.describe(decision)}")
 

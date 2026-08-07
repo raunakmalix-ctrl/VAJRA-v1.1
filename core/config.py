@@ -111,6 +111,16 @@ VIITOR_MODELS    = os.path.join(MODEL_ROOT, "viitor")
 VIITOR_HTTP_PORT = int(os.environ.get("VIITOR_HTTP_PORT", "7861"))
 VIITOR_HOST      = os.environ.get("VIITOR_HOST", "127.0.0.1")
 VIITOR_BASE_URL  = f"http://{VIITOR_HOST}:{VIITOR_HTTP_PORT}"
+# The gRPC services behind the gateway. The gateway answers /health as soon as
+# IT is up, which is not the same as the group being usable -- a request then
+# fails with "failed to connect to 127.0.0.1:51051". Readiness has to mean every
+# backing service is accepting connections, so their ports are listed here.
+VIITOR_SERVICE_PORTS = {
+    "encoder": int(os.environ.get("VIITOR_ENCODER_PORT", "51051")),
+    "llm": int(os.environ.get("VIITOR_LLM_PORT", "51052")),
+    "decoder": int(os.environ.get("VIITOR_DECODER_PORT", "51053")),
+    "orchestrator": int(os.environ.get("VIITOR_ORCH_PORT", "50051")),
+}
 # English only, by deliberate choice. The upstream aligner defaults to Chinese,
 # so this has to be stated explicitly or an English edit is aligned with the
 # wrong model.

@@ -31,7 +31,8 @@ from core.utils import timestamp_file
 from core.config import (VIITOR_DIR, VENV_VIITOR_PY, VIITOR_MODELS,
                          VIITOR_BASE_URL, VIITOR_HTTP_PORT, VIITOR_HOST,
                          VIITOR_LANGUAGE, VIITOR_START_TIMEOUT_SEC,
-                         VIITOR_REQUEST_TIMEOUT_SEC, VENV_ROOT)
+                         VIITOR_REQUEST_TIMEOUT_SEC, VENV_ROOT,
+                         VIITOR_SERVICE_PORTS)
 
 # Only English is enabled. The model also supports Chinese upstream, but every
 # language claimed here has to be one an operator can actually rely on, and the
@@ -80,15 +81,42 @@ def _service_env():
     return env
 
 
-def _health(timeout=2.0):
+def _gateway_ok(timeout=2.0):
     import urllib.request
-    import urllib.error
     try:
         with urllib.request.urlopen(f"{VIITOR_BASE_URL}/health",
                                     timeout=timeout) as r:
             return 200 <= r.status < 300
     except Exception:
         return False
+
+
+def _services_down(timeout=1.0):
+    """Backing gRPC services that are NOT accepting connections."""
+    import socket
+    down = []
+    for name, port in sorted(VIITOR_SERVICE_PORTS.items()):
+        try:
+            with socket.create_connection((VIITOR_HOST, port), timeout):
+                pass
+        except OSError:
+            down.append(f"{name}:{port}")
+    return down
+
+
+def _health(timeout=2.0):
+    """Ready means the WHOLE group can serve a request, not just the gateway.
+
+    The gateway answers /health as soon as it is itself up. Trusting that was
+    wrong: it reported ready after 75 seconds while the encoder was still down,
+    so the first real request died with "failed to connect to 127.0.0.1:51051"
+    -- after the caller had already waited. A readiness check that returns true
+    for an unusable service is worse than none, because it converts a wait into
+    a failure.
+    """
+    if not _gateway_ok(timeout):
+        return False
+    return not _services_down()
 
 
 class ViitorEngine(BaseEngine):
@@ -138,11 +166,19 @@ class ViitorEngine(BaseEngine):
             time.sleep(3)
             waited += 3
             if progress is not None and waited % 15 == 0:
+                pending = _services_down()
                 progress(min(0.9, waited / float(timeout)),
-                         desc=f"Loading ViiTorVoice models ({waited}s)")
+                         desc=(f"Loading voice models ({waited}s"
+                               + (f"; waiting on {pending[0].split(':')[0]}"
+                                  if pending else "") + ")"))
+        down = _services_down()
+        detail = (f" The gateway is up but these never started: "
+                  f"{', '.join(down)}." if down and _gateway_ok()
+                  else "")
         raise RuntimeError(
-            f"ViiTorVoice did not become healthy within {timeout}s. Check the "
-            f"service logs:  bash {_LAUNCHER} logs orchestrator  (in "
+            f"ViiTorVoice did not become healthy within {timeout}s.{detail} "
+            f"Check the service logs:  bash {_LAUNCHER} logs "
+            f"{down[0].split(':')[0] if down else 'orchestrator'}  (in "
             f"{VIITOR_DIR})")
 
     def stop(self):

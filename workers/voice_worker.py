@@ -11,11 +11,18 @@ os.environ["MPLBACKEND"] = "Agg"   # XTTS imports matplotlib; avoid inline backe
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.subprocess_runner import read_args, emit_result   # noqa: E402
+from core.textnorm import expand_digits                     # noqa: E402
 
 
 def main():
     args = read_args()
     text     = args["text"]
+    # XTTS expands digits itself via num2words, which has no converter for
+    # several languages it otherwise supports -- Hindi among them -- so a single
+    # digit anywhere in the text aborts synthesis. Expanding here, inside the
+    # environment where num2words actually lives, leaves nothing for it to trip
+    # over and keeps proper number words wherever a converter exists.
+    text     = expand_digits(text, args.get("language") or "en")
     ref      = args.get("reference_audio")
     speaker  = args.get("speaker")          # built-in XTTS voice name (preset)
     language = args.get("language", "en")
