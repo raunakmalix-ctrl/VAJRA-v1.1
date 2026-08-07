@@ -81,6 +81,33 @@ def _extract_audio(video_path):
     return out
 
 
+# Beyond this, re-timing the picture to fit new speech stops being invisible:
+# gestures and blinks visibly slow down or speed up. It is not a hard limit --
+# the operator may still want the take -- but it has to be said out loud.
+_RETIME_NOTICEABLE = 0.25
+
+
+def _retime_video(video_path, factor, out_path=None):
+    """Stretch or compress the picture by `factor` so it matches new audio.
+
+    Used only by the whole-track retake, where the new script has its own
+    natural length and the original timing no longer applies. Video is
+    re-encoded without audio; the new track is muxed on afterwards.
+    """
+    out = out_path or timestamp_file("retimed", "mp4")
+    proc = subprocess.run(
+        [FFMPEG_PATH, "-y", "-i", video_path,
+         "-filter:v", f"setpts={factor:.6f}*PTS",
+         "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18", out],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0 or not os.path.exists(out):
+        raise RuntimeError(
+            f"Could not re-time the video (ffmpeg exit {proc.returncode}).\n"
+            f"{proc.stderr[-600:]}")
+    return out
+
+
 # A shortfall smaller than this is absorbed by time-compression without being
 # noticeable; beyond it, the span is re-voiced as a whole line rather than cut.
 _ESCALATE_SEC = 0.12
@@ -138,7 +165,7 @@ class TranscriptEngine(BaseEngine):
         self.viitor   = viitor_engine.ViitorEngine()
 
     # ── step 1 ────────────────────────────────────────────────────────────────
-    def extract_transcript(self, video_path):
+    def extract_transcript(self, video_path, language=None):
         audio_path = _extract_audio(video_path)
 
         # Default to CPU: faster-whisper's GPU backend (ctranslate2) needs
@@ -146,6 +173,13 @@ class TranscriptEngine(BaseEngine):
         # that kills the whole process (not a catchable exception), so we must
         # not even try CUDA by default. Opt in with WHISPER_DEVICE=cuda only if
         # you've made cuDNN 8 available.
+        # Auto-detection is weaker than it looks here: it runs on CPU with
+        # int8 quantisation and decides from roughly the first 30 seconds. On
+        # accented English it can settle on a related language and then
+        # TRANSLITERATE -- English words written in the wrong script, which
+        # looks like a transcription bug but is a detection one. So the caller
+        # can state the language outright.
+        want = (language or "").strip().lower() or None
         prefer = os.environ.get("WHISPER_DEVICE", "cpu")
         devices = ["cuda", "cpu"] if prefer == "cuda" else ["cpu"]
         raw, lang, last_err = None, "en", None
@@ -153,7 +187,8 @@ class TranscriptEngine(BaseEngine):
             try:
                 model = _load_whisper(dev)
                 seg_iter, info = model.transcribe(
-                    audio_path, word_timestamps=True, vad_filter=True
+                    audio_path, word_timestamps=True, vad_filter=True,
+                    language=want,
                 )
                 raw = list(seg_iter)   # materialize now to surface runtime errors
                 lang = getattr(info, "language", "en") or "en"
@@ -190,6 +225,15 @@ class TranscriptEngine(BaseEngine):
         if not segments:
             raise RuntimeError("No speech detected in the video.")
 
+        if want and lang != want:
+            # transcribe() honours `language`, so this should not happen; if it
+            # ever does, the mismatch matters more than the guess.
+            print(f"[Transcript] NOTE requested '{want}' but the model "
+                  f"reported '{lang}'.")
+            lang = want
+        if want:
+            print(f"[Transcript] Language forced to '{want}' "
+                  f"(auto-detection skipped).")
         if n_words:
             print(f"[Transcript] {len(segments)} segments, {n_words} word timings "
                   f"-- word-level editing available.")
@@ -235,13 +279,125 @@ class TranscriptEngine(BaseEngine):
             raise RuntimeError("No speech detected in that audio.")
         return text
 
+    def _retake_whole_track(self, state, new_lines, segments, track, sr,
+                            method, inference_steps, guidance_scale, progress,
+                            decision=None, allow_nc=False, prefer_tier=None):
+        """Speak the whole script afresh and re-time the picture to fit it.
+
+        The surgical path exists to keep as much of the original recording as
+        possible, and everything in it follows from one invariant: the new audio
+        must occupy exactly the slot it replaces, so the track stays frame-
+        aligned with the video. When the entire script changes that invariant
+        stops being useful -- a script three times longer cannot be squeezed
+        into the original timing, and trying caps the stretch and drops words.
+
+        So this mode drops the invariant deliberately and restores alignment the
+        other way round: synthesise at natural pace, then re-time the PICTURE
+        onto the new duration. Nothing of the original audio survives, which is
+        the honest cost and is reported as such.
+        """
+        import numpy as np
+        import dsp
+        from core import router as edit_router
+        from dsp import reference as dspref
+
+        lines = [(new_lines[i] if i < len(new_lines) else seg["text"]).strip()
+                 for i, seg in enumerate(segments)]
+        if not any(lines):
+            raise ValueError("The transcript is empty.")
+
+        decision = edit_router.resolve(
+            state.get("language", "en"), has_word_timings=False,
+            allow_nc=allow_nc, prefer_tier=prefer_tier,
+            available={"xtts": os.path.exists(VENV_VOICE_PY),
+                       "viitor_nar": viitor_engine.available()})
+        state["routing"] = decision
+        print(f"[Transcript] Whole-track retake: {len(lines)} line(s) via "
+              f"{decision['label']}")
+
+        # The cloning reference comes from the original recording. Nothing is
+        # excluded, because nothing of it is being kept.
+        ref_path = state.get("audio")
+        ref_clip, ref_info = dspref.pick_reference(track, sr)
+        if ref_clip is not None and ref_clip.size:
+            ref_path = timestamp_file("voice_ref", "wav")
+            dsp.save(ref_path, ref_clip, sr)
+            print(f"[Transcript] Cloning reference: {dspref.describe(ref_info)}")
+
+        lang = (decision.get("synthesis_language")
+                or state.get("synthesis_language") or "en")
+        pieces = []
+        for i, line in enumerate(lines):
+            if progress is not None:
+                progress(i / max(len(lines), 1),
+                         desc=f"Re-voicing line {i + 1}/{len(lines)}")
+            if not line:
+                continue
+            wav = self.voice.run(text=line, reference_audio_path=ref_path,
+                                 language=lang)
+            clip, csr = dsp.load(wav, mono=True)
+            clip = dsp.resample(clip, csr, sr)
+            clip, _ = dsp.trim_silence(clip, sr)
+            pieces.append(clip)
+            # Keep the original pause after this line, so the new take inherits
+            # the speaker's pacing instead of running together.
+            if i + 1 < len(segments):
+                gap = float(segments[i + 1]["start"]) - float(segments[i]["end"])
+                if gap > 0.02:
+                    pieces.append(np.zeros(int(min(gap, 1.5) * sr),
+                                           dtype=np.float32))
+
+        if not pieces:
+            raise ValueError("Nothing was synthesised.")
+        new_track = np.concatenate(pieces).astype(np.float32)
+        new_track = dsp.limit_peak(new_track, ceiling_db=-1.0)
+
+        old_sec = track.shape[0] / float(sr)
+        new_sec = new_track.shape[0] / float(sr)
+        factor = new_sec / max(old_sec, 1e-6)
+
+        new_audio = timestamp_file("edited_audio", "wav")
+        dsp.save(new_audio, new_track, sr)
+        state["edited_audio"] = new_audio
+        state["retake"] = {
+            "lines": len(lines), "original_sec": round(old_sec, 2),
+            "new_sec": round(new_sec, 2), "retime_factor": round(factor, 3),
+            "noticeable": abs(factor - 1.0) > _RETIME_NOTICEABLE,
+            "note": ("The whole track was replaced, so no original audio "
+                     "remains."),
+        }
+        print(f"[Transcript] New track {new_sec:.2f}s vs original "
+              f"{old_sec:.2f}s -- re-timing the picture by {factor:.3f}x")
+        if state["retake"]["noticeable"]:
+            print(f"[Transcript] WARNING re-timing by {factor:.2f}x is enough "
+                  f"to see: gestures and blinks will run "
+                  f"{'slow' if factor > 1 else 'fast'}. Shorten or lengthen "
+                  f"the script toward the original speaking time to reduce it.")
+
+        video = state["video"]
+        if abs(factor - 1.0) > 0.01:
+            if progress is not None:
+                progress(0.75, desc="Re-timing the video ...")
+            video = _retime_video(video, factor)
+            state["retimed_video"] = video
+
+        if progress is not None:
+            progress(0.85, desc="Re-syncing lips ...")
+        # Whole-video sync: every frame's mouth is wrong now, so there is no
+        # window to confine it to.
+        state["lipsync"] = {"windowed": False,
+                            "reason": "the whole track was replaced"}
+        return self.lipsync.run(
+            video_path=video, audio_path=new_audio, method=method,
+            inference_steps=inference_steps, guidance_scale=guidance_scale)
+
     # ── step 2 ────────────────────────────────────────────────────────────────
     def apply_edits(self, state, edited_text, method="latentsync",
                     inference_steps=20, guidance_scale=1.5, progress=None,
                     realism=True, max_stretch=None, word_level=True,
                     auto_reference=True, separate=False,
                     windowed_lipsync=True, allow_nc=False,
-                    scorecard=True, prefer_tier=None):
+                    scorecard=True, prefer_tier=None, full_retake=False):
         """Re-voice only the changed lines and splice them back in.
 
         realism: run the dsp match chain (duration fit, spectral/room/loudness
@@ -343,6 +499,12 @@ class TranscriptEngine(BaseEngine):
 
         # Drop any span that collapsed to nothing after clamping.
         edits = [e for e in edits if e[2] > e[1]]
+
+        if full_retake:
+            return self._retake_whole_track(
+                state, new_lines, segments, track, sr, method,
+                inference_steps, guidance_scale, progress, decision=None,
+                allow_nc=allow_nc, prefer_tier=prefer_tier)
 
         if not edits:
             raise ValueError("No changes detected in the transcript.")

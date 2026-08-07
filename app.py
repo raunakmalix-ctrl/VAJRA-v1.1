@@ -208,6 +208,15 @@ def err(msg):
 def warn(msg): return f"<span class='status-warn'>⚠ {msg}</span>"
 
 
+# Label -> whisper language code, for the transcription override.
+from engines.voice_engine import SUPPORTED_LANGUAGES as _VOICE_LANGS
+_LANG_CODES = dict(_VOICE_LANGS)
+# Urdu can be TRANSCRIBED but not re-voiced: no installed synthesiser covers
+# it, so the router will fall back and say so. Offering it anyway is right --
+# getting the transcript in the correct script is useful on its own.
+_LANG_CODES["Urdu"] = "ur"
+
+
 def _engine_availability():
     """What is ACTUALLY built right now, for the router to reason with.
 
@@ -302,6 +311,18 @@ def _scorecard_html(card):
 def _relip_report(state):
     html = _routing_html(state.get("routing"))
     html += _scorecard_html(state.get("scorecard"))
+    rt = state.get("retake")
+    if rt:
+        rows = [("Mode", "whole track replaced — no original audio remains"),
+                ("Length", f"{rt['original_sec']}s → {rt['new_sec']}s"),
+                ("Video re-timed", f"{rt['retime_factor']}x")]
+        if rt.get("noticeable"):
+            rows.append(("Warning",
+                         f"<span style='color:var(--warn)'>re-timing this far "
+                         f"is visible — gestures will run "
+                         f"{'slow' if rt['retime_factor'] > 1 else 'fast'}"
+                         f"</span>"))
+        html += _panel("Whole-track retake", rows)
     ls = state.get("lipsync")
     if ls:
         if ls.get("windowed"):
@@ -330,14 +351,20 @@ def _relip_report(state):
     return html or ""
 
 
-def do_extract(video, allow_nc=False, progress=gr.Progress()):
+def do_extract(video, allow_nc=False, spoken_lang="Auto-detect",
+               progress=gr.Progress()):
     if video is None:
         return "", "", None, None, warn("Upload a video first"), ""
     GPU_LOCK.acquire()
     try:
         free_inprocess()
         progress(0.3, desc="Transcribing ...")
-        text, state = transcript.extract_transcript(video)
+        # Auto-detection runs on CPU from the first half-minute and can settle
+        # on the wrong language for accented speech — then transliterate, which
+        # looks like a transcription fault rather than a detection one.
+        lang = (None if str(spoken_lang).startswith("Auto")
+                else _LANG_CODES.get(spoken_lang))
+        text, state = transcript.extract_transcript(video, language=lang)
         # Preview the routing decision now, so the operator learns what quality
         # this language can reach BEFORE spending GPU time on the edit.
         from core import router
@@ -362,7 +389,8 @@ def do_extract(video, allow_nc=False, progress=gr.Progress()):
 def do_relip(state, edited_text, method, steps, guidance,
              realism=True, word_level=True, separate="auto",
              windowed=True, allow_nc=False, max_stretch=0.15,
-             tier="Auto (best available)", progress=gr.Progress()):
+             tier="Auto (best available)", full_retake=False,
+             progress=gr.Progress()):
     if not state:
         return None, None, warn("Extract a transcript first"), ""
     if not edited_text or not edited_text.strip():
@@ -387,6 +415,7 @@ def do_relip(state, edited_text, method, steps, guidance,
             # honours where it can and reports where it cannot.
             prefer_tier=(None if str(tier).startswith("Auto")
                          else str(tier).strip()[0]),
+            full_retake=bool(full_retake),
             progress=progress,
         )
         return (out, state.get("edited_audio"), ok(os.path.basename(out)),
@@ -711,6 +740,14 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     gr.HTML("<div class='section-label'>Source Video</div>")
                     ed_video = gr.Video(label="Upload a talking-head video",
                                         elem_classes=["output-media"])
+                    ed_lang = gr.Dropdown(
+                        ["Auto-detect"] + sorted(_LANG_CODES),
+                        value="Auto-detect", label="Spoken language",
+                        info="Set this if the transcript comes back in the "
+                             "wrong language. Detection runs on the first "
+                             "half-minute and can mistake accented speech for "
+                             "a related language, then write it in that "
+                             "script.")
                     ed_extract = gr.Button("◐  Extract Transcript", variant="secondary")
                     gr.HTML("<div class='section-label'>Transcript "
                             "(edit words · keep one segment per line)</div>")
@@ -763,6 +800,15 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                 info="How far a regenerated span may be stretched to "
                                      "fit its slot before the edit is flagged "
                                      "instead. Beyond ~15% becomes audible.")
+                            ed_full = gr.Checkbox(
+                                value=False,
+                                label="Replace the entire track",
+                                info="Re-voice every line and re-time the "
+                                     "picture to the new speech. Use when the "
+                                     "whole script changes — nothing of the "
+                                     "original audio survives, and the video "
+                                     "is stretched to fit, which shows beyond "
+                                     "about 25%.")
                             ed_tier = gr.Dropdown(
                                 ["Auto (best available)",
                                  "A — infill: regenerate only the changed words",
@@ -802,13 +848,13 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                     with gr.Accordion("Routing & detectability report",
                                       open=False):
                         ed_report = gr.HTML("")
-            ed_extract.click(do_extract, [ed_video, ed_nc],
+            ed_extract.click(do_extract, [ed_video, ed_nc, ed_lang],
                              [ed_orig, ed_text, ed_state, ed_src_audio,
                               ed_status, ed_report])
             ed_relip.click(do_relip,
                            [ed_state, ed_text, ed_method, ed_steps, ed_guid,
                             ed_realism, ed_word, ed_sep, ed_windowed, ed_nc,
-                            ed_stretch, ed_tier],
+                            ed_stretch, ed_tier, ed_full],
                            [ed_out, ed_new_audio, ed_status, ed_report])
 
         # -- 02 Voice Generation --------------------------------------
