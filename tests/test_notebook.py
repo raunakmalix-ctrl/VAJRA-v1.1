@@ -120,6 +120,31 @@ for pkg in ("core/router.py", "evaluation/scorecard.py", "dsp/match.py"):
     check(f"{pkg} exists on the pinned branch",
           os.path.exists(os.path.join(_ROOT, pkg)))
 
+print()
+print("=" * 74)
+print("notebook — cell source is stored as lines, and carries no legacy naming")
+print("=" * 74)
+# A cell may store its source one CHARACTER per list element. Colab renders it
+# fine, so it goes unnoticed -- but no multi-character token then appears
+# contiguously in the file, which means grep cannot find it and a search-replace
+# silently misses it. That exact fault hid a stale env-var name through a
+# project-wide rename, so it is checked rather than trusted.
+split = [i for i, c in enumerate(nb["cells"])
+         if isinstance(c.get("source"), list) and c["source"]
+         and max(len(x) for x in c["source"]) == 1 and len(c["source"]) > 4]
+check("no cell is stored one character per element", not split, str(split))
+
+joined = "\n".join("".join(c.get("source", [])) for c in nb["cells"])
+for legacy in ("IMAGE_TALK", "image_talk", "Image Talk", "Image-Talk"):
+    check(f"no '{legacy}' anywhere in the notebook", legacy not in joined)
+
+# The notebook sets these; core/config.py and the shell builders read them. A
+# rename on one side alone leaves the other silently on its default.
+for var in ("VAJRA_ROOT", "VAJRA_MODELS"):
+    check(f"{var} is set by the notebook", var in joined)
+    cfg = open(os.path.join(_ROOT, "core", "config.py"), encoding="utf-8").read()
+    check(f"{var} is read by core/config.py", var in cfg)
+
 print("=" * 74)
 if FAILS:
     print(f"{len(FAILS)} FAILURE(S):")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Idempotent patches to the cloned third-party repos. Safe to re-run.
 set -e
-ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+ROOT="${VAJRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 TP="$ROOT/third_party"
 
 # 1. Wav2Lip: librosa 0.10 made filters.mel() keyword-only.

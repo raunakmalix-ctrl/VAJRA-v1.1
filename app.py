@@ -1,14 +1,14 @@
 """
 VAJRA v1.1 — AI Media Studio (Colab / Gradio)
 
-Run:  python app.py        (set IMAGE_TALK_SHARE=1 for a public link)
+Run:  python app.py        (set VAJRA_SHARE=1 for a public link)
 """
 import os
 import sys
 import threading
 
 PROJECT_ROOT = os.environ.get(
-    "IMAGE_TALK_ROOT", os.path.dirname(os.path.abspath(__file__))
+    "VAJRA_ROOT", os.path.dirname(os.path.abspath(__file__))
 )
 sys.path.insert(0, PROJECT_ROOT)
 
@@ -667,7 +667,7 @@ def zip_outputs():
     if not files:
         return None
     zpath = os.path.join(tempfile.gettempdir(),
-                         _t.strftime("image_talk_outputs_%Y%m%d_%H%M%S.zip"))
+                         _t.strftime("vajra_outputs_%Y%m%d_%H%M%S.zip"))
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
             z.write(f, os.path.basename(f))
@@ -1193,12 +1193,12 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
 
 
 if __name__ == "__main__":
-    share = os.environ.get("IMAGE_TALK_SHARE", "1") == "1"
+    share = os.environ.get("VAJRA_SHARE", "1") == "1"
     _fav = os.path.join(PROJECT_ROOT, "assets", "favicon.svg")
     demo.queue(max_size=4)
     demo.launch(
         server_name="0.0.0.0",
-        server_port=int(os.environ.get("IMAGE_TALK_PORT", "7860")),
+        server_port=int(os.environ.get("VAJRA_PORT", "7860")),
         share=share,
         show_error=True,
         favicon_path=_fav if os.path.exists(_fav) else None,

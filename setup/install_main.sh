@@ -3,7 +3,7 @@
 # Run once per Colab session (fast if MODEL_ROOT is on Drive).
 set -e
 
-ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+ROOT="${VAJRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 THIRD_PARTY="$ROOT/third_party"
 mkdir -p "$THIRD_PARTY"
 

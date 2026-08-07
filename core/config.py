@@ -3,23 +3,23 @@ Central path configuration for VAJRA v1.1 (Colab).
 
 Everything derives from PROJECT_ROOT. In Colab the repo is cloned to
 /content/VAJRA-v1.1 and this resolves automatically. Override with the
-IMAGE_TALK_ROOT env var if you clone elsewhere.
+VAJRA_ROOT env var if you clone elsewhere.
 
 Model weights live under MODEL_ROOT. To persist them across Colab sessions,
-set MODEL_ROOT to a Google Drive path (e.g. /content/drive/MyDrive/image_talk_models)
-via the IMAGE_TALK_MODELS env var before launching.
+set MODEL_ROOT to a Google Drive path (e.g. /content/drive/MyDrive/vajra/models)
+via the VAJRA_MODELS env var before launching.
 """
 import os
 import shutil
 
 # ── Roots ───────────────────────────────────────────────────────────────────
 _HERE        = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.environ.get("IMAGE_TALK_ROOT", os.path.dirname(_HERE))
-MODEL_ROOT   = os.environ.get("IMAGE_TALK_MODELS", os.path.join(PROJECT_ROOT, "models"))
+PROJECT_ROOT = os.environ.get("VAJRA_ROOT", os.path.dirname(_HERE))
+MODEL_ROOT   = os.environ.get("VAJRA_MODELS", os.path.join(PROJECT_ROOT, "models"))
 OUTPUTS_DIR  = os.path.join(PROJECT_ROOT, "outputs")
 UPLOADS_DIR  = os.path.join(PROJECT_ROOT, "uploads")
 THIRD_PARTY  = os.path.join(PROJECT_ROOT, "third_party")   # cloned model repos
-VENV_ROOT    = os.environ.get("IMAGE_TALK_VENVS", os.path.join(PROJECT_ROOT, "venvs"))
+VENV_ROOT    = os.environ.get("VAJRA_VENVS", os.path.join(PROJECT_ROOT, "venvs"))
 HF_CACHE_DIR = os.path.join(MODEL_ROOT, "hf_cache")
 
 for _d in (MODEL_ROOT, OUTPUTS_DIR, UPLOADS_DIR, THIRD_PARTY, VENV_ROOT, HF_CACHE_DIR):

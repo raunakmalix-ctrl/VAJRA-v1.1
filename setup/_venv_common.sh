@@ -8,8 +8,8 @@
 # module's environment is independent, so each gets its own entry point and
 # only what you actually intend to run has to be built.
 
-ROOT="${IMAGE_TALK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-VENVS="${IMAGE_TALK_VENVS:-$ROOT/venvs}"
+ROOT="${VAJRA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+VENVS="${VAJRA_VENVS:-$ROOT/venvs}"
 TP="$ROOT/third_party"
 mkdir -p "$VENVS"
 
