@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.config import (
     MODEL_ROOT, XTTS_DIR, INSIGHTFACE_ROOT, INSWAPPER_PATH, GFPGAN_PATH,
     WAV2LIP_CKPT, LATENTSYNC_DIR, LATENTSYNC_WEIGHTS_DIR,
+    LATENTSYNC_HF_REPO,
 )
 
 # Empty string -> None, otherwise hf_hub builds an illegal "Bearer " header.
@@ -102,15 +103,53 @@ def _link_tree(src_dir, dst_dir):
 
 
 def latentsync():
-    # LatentSync 1.5 weights: download the real blobs to MODEL_ROOT (Drive-
-    # persisted when USE_DRIVE=True), then symlink them into
-    # third_party/LatentSync/checkpoints/, the path LatentSync's own
-    # inference script expects (LATENTSYNC_CKPT).
+    # Download the real blobs to MODEL_ROOT (Drive-persisted when USE_DRIVE=True),
+    # then symlink them into third_party/LatentSync/checkpoints/, the path
+    # LatentSync's own inference script expects (LATENTSYNC_CKPT).
+    #
+    # Version-scoped, and that is not tidiness. Successive releases ship the
+    # SAME filename (latentsync_unet.pt) with different architectures -- 1.5 is
+    # a 256px model, 1.6 a 512px one. A plain "does the file exist" check would
+    # keep whatever was cached first and silently pair it with the new UNet
+    # config, loading a mismatched model. Keying the cache to the repo, and
+    # recording which repo the checkpoint directory was populated from, makes an
+    # upgrade actually take effect.
     ckpt_dir = os.path.join(LATENTSYNC_DIR, "checkpoints")
-    if os.path.exists(os.path.join(ckpt_dir, "latentsync_unet.pt")):
-        print("  exists"); return
-    _hf_snapshot(LATENTSYNC_HF_REPO, LATENTSYNC_WEIGHTS_DIR)
-    _link_tree(LATENTSYNC_WEIGHTS_DIR, ckpt_dir)
+    marker = os.path.join(ckpt_dir, ".vajra_source")
+    want = LATENTSYNC_HF_REPO
+    have = None
+    if os.path.exists(marker):
+        try:
+            with open(marker, encoding="utf-8") as fh:
+                have = fh.read().strip()
+        except OSError:
+            have = None
+
+    if have == want and os.path.exists(os.path.join(ckpt_dir,
+                                                    "latentsync_unet.pt")):
+        print(f"  exists ({want})"); return
+
+    if have and have != want:
+        print(f"  replacing {have} with {want}")
+        # Clear the old links so _link_tree does not skip them. Only links and
+        # files inside our own checkpoint directory are touched; the downloaded
+        # blobs under MODEL_ROOT are left alone, so switching back costs nothing.
+        for root, _dirs, files in os.walk(ckpt_dir):
+            for name in files:
+                fp = os.path.join(root, name)
+                if os.path.islink(fp) or name.endswith((".pt", ".pth")):
+                    try:
+                        os.unlink(fp)
+                    except OSError:
+                        pass
+
+    # One directory per release, so both can coexist on a persistent volume.
+    weights = os.path.join(LATENTSYNC_WEIGHTS_DIR, want.split("/")[-1])
+    _hf_snapshot(want, weights)
+    _link_tree(weights, ckpt_dir)
+    os.makedirs(ckpt_dir, exist_ok=True)
+    with open(marker, "w", encoding="utf-8") as fh:
+        fh.write(want)
 
 
 def viitor():

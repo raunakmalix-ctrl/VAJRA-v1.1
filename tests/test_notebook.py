@@ -166,6 +166,18 @@ check("no 256px config left behind",
       '"stage2.yaml"' not in cfg)
 check("the downloader uses the pinned repo, not a literal",
       "LATENTSYNC_HF_REPO" in dl and "LatentSync-1.5" not in dl)
+# Using a name is not the same as importing it: the first version of this
+# referenced LATENTSYNC_HF_REPO without adding it to the import list, which
+# passed the check above and would have crashed on the first download.
+check("and actually imports it",
+      "LATENTSYNC_HF_REPO,
+)" in dl or "LATENTSYNC_HF_REPO," in dl.split("
+)")[0])
+# Successive releases ship the same filename with different architectures, so
+# a plain existence check would keep stale weights and pair them with the new
+# config -- a mismatched model that loads and produces bad output.
+check("the weight cache is keyed to the release",
+      ".vajra_source" in dl and "want.split" in dl)
 
 # 24 kHz has to survive all the way to the file, not just the working buffer.
 check("the master rate is 24 kHz", "MASTER_SR = 24000" in te)
