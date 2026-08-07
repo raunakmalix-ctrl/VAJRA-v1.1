@@ -174,6 +174,10 @@ class LipSyncEngine(BaseEngine):
               f"{sum(b - a for a, b in wins):.2f}s of {dur:.2f}s "
               f"({cov*100:.2f}% of the video).")
 
+        # Defined before first use: the windowing summary below references it,
+        # and the compositor fills it in later during the frame loop.
+        texture_report = {}
+        report["texture"] = texture_report
         report.update({"windowed": True, "windows": [(float(a), float(b))
                                                      for a, b in wins],
                        "coverage": float(cov), "duration_sec": float(dur)})
@@ -223,7 +227,8 @@ class LipSyncEngine(BaseEngine):
             # audio_path, NOT wav_path: wav_path is the 16 kHz copy made for
             # the model. Muxing that would throw away the master's full rate.
             _composite_video(video_path, frame_windows, out_path, audio_path,
-                             fps, w, h, mask_mouth=mask_mouth)
+                             fps, w, h, mask_mouth=mask_mouth,
+                             texture_report=texture_report)
             print(f"[LipSync] Output: {out_path}")
             return out_path
         finally:
@@ -388,8 +393,13 @@ def _read_frames(path, w, h):
 
 
 def _composite_video(src_video, frame_windows, out_path, wav_path, fps, w, h,
-                     mask_mouth=True):
+                     mask_mouth=True, texture_report=None):
     """Stream `src_video`'s frames to a new file, swapping in synced mouths.
+
+    texture_report: optional dict, filled in with what the per-frame grain and
+    sharpness matching actually did. Collected here because it happens inside
+    the frame loop, and reported outward because a correction the operator
+    cannot see is indistinguishable from one that never ran.
 
     frame_windows: [(i0, i1, synced_clip_path_or_None), ...] sorted by i0.
 
@@ -469,7 +479,9 @@ def _composite_video(src_video, frame_windows, out_path, wav_path, fps, w, h,
                             for j in range(n)]
                     else:
                         outs = vision.composite_window(
-                            p["base"][:n], p["frames"][:n], p["mask"])
+                            p["base"][:n], p["frames"][:n], p["mask"],
+                            report=(texture_report
+                                    if texture_report is not None else None))
                     for o in outs:
                         enc.stdin.write(np.ascontiguousarray(o).tobytes())
                     # Any base frames beyond the synced clip pass through.

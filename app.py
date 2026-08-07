@@ -309,6 +309,20 @@ def _relip_report(state):
                     ("Coverage", f"{round(ls.get('coverage', 0.0) * 100, 2)}% of the "
                                  f"video — the rest is the original footage, "
                                  f"untouched")]
+            tx = ls.get("texture") or {}
+            if tx.get("frames"):
+                bits = [f"{tx.get('sharpened', 0)}/{tx['frames']} frames sharpened",
+                        f"{tx.get('grained', 0)} grain-matched"]
+                if tx.get("mean_sharpen_gain"):
+                    bits.append(f"mean gain {tx['mean_sharpen_gain']}x")
+                if tx.get("capped_frames"):
+                    bits.append(f"{tx['capped_frames']} hit the correction limit")
+                rows.append(("Texture match", " · ".join(bits)))
+            elif tx.get("sharpness_skipped") or tx.get("grain_skipped"):
+                rows.append(("Texture match",
+                             f"<span style='color:var(--muted)'>"
+                             f"{tx.get('sharpness_skipped') or tx.get('grain_skipped')}"
+                             f"</span>"))
         else:
             rows = [("Mode", "whole video re-synced"),
                     ("Why", ls.get("reason") or "windowing was not applicable")]

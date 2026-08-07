@@ -12,6 +12,8 @@ windows is original pixels.
 
 Pure numpy; no model and no GPU.
 """
+from vision.texture import (match_texture, texture_distance, sharpness,
+                            grain_sigma, apply_grain, match_sharpness)
 from vision.composite import (
     frame_range, merge_windows, coverage,
     feathered_box_mask, feathered_ellipse_mask,
@@ -21,6 +23,8 @@ from vision.composite import (
 )
 
 __all__ = [
+    "match_texture", "texture_distance", "sharpness", "grain_sigma",
+    "apply_grain", "match_sharpness",
     "frame_range", "merge_windows", "coverage",
     "feathered_box_mask", "feathered_ellipse_mask",
     "mouth_box", "mouth_box_from_landmarks", "changed_region_box",

@@ -337,10 +337,15 @@ def install(probe, composite_ok=True):
     le._cut_audio = lambda src, t0, t1, dst: dst
     le.to_wav = lambda p: (p, False)
 
-    def fake_composite(src, frame_windows, out, wav, fps, w, h, mask_mouth=True):
+    # **kw so the stub survives new optional parameters on the real function.
+    # A stub pinned to an exact signature turns every addition into a spurious
+    # failure, which trains you to ignore the suite.
+    def fake_composite(src, frame_windows, out, wav, fps, w, h,
+                       mask_mouth=True, **kw):
         if not composite_ok:
             raise RuntimeError("composite failed")
         CALLS["frame_windows"] = frame_windows
+        CALLS["texture_report"] = kw.get("texture_report")
         return out
 
     le._composite_video = fake_composite
@@ -366,6 +371,9 @@ check("no windows falls back to whole video", CALLS["whole"] == 1 and r == "whol
 # Small edits -> windowed.
 install(Probe())
 r = eng.run_windowed(VID, AUD, [(2.0, 2.5), (7.0, 7.4)])
+check("the compositor is handed somewhere to report texture matching",
+      isinstance(CALLS.get("texture_report"), dict),
+      str(type(CALLS.get("texture_report"))))
 check("small edits use the windowed path", CALLS["whole"] == 0,
       f"whole={CALLS['whole']}")
 check("one model call per window", len(CALLS["windows"]) == 2,

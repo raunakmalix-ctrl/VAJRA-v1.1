@@ -14,7 +14,8 @@ python tests/test_app_ui.py              # 15 assertions on the UI report panels
 python tests/test_notebook.py            # 23 assertions on the Colab notebook
 python tests/test_setup_scripts.py       # 45 assertions on the env builders
 python tests/test_fit_regression.py      # 21 assertions on never truncating
-python tests/test_viitor.py              # 46 assertions on tier A routing + HTTP
+python tests/test_viitor.py              # 63 assertions on tier A routing + HTTP
+python tests/test_texture.py             # 38 assertions on grain/sharpness matching
 ```
 
 What each one is actually for:
@@ -46,6 +47,13 @@ What each one is actually for:
   mid-phrase. It grows into neighbouring silence, or the whole line is re-voiced;
   truncation, which made an edit sound like the new wording followed by the old
   words, is never an outcome.
+- **`test_texture.py`** — that a generated patch ends up carrying the same
+  sharpness and grain as the real footage around it. Built as a controlled
+  experiment: synthetic footage gets a known grain sigma, a patch is damaged the
+  way a sync model damages one (rendered small, scaled back up, denoised), and
+  the matcher has to measurably close both gaps without overshooting. Also pins
+  the refusals — grain is unmeasurable in a textured region, and saying so beats
+  reporting a confident wrong number.
 - **`test_viitor.py`** — that tier A is only promised when the environment, the
   repo and the weights are all present; that a tier the operator requests is
   honoured or explained; and that the multipart body matches the documented API

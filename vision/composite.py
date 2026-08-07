@@ -27,6 +27,8 @@ because the surrounding video plumbing is not.
 """
 import numpy as np
 
+from vision import texture as _texture
+
 # Fraction of the face box height, measured from the chin upward, treated as
 # "mouth region". Wav2Lip and LatentSync both operate on roughly the lower half
 # of the face; this covers the jaw and lips with margin without reaching the eyes.
@@ -300,15 +302,64 @@ def blend(base, overlay, mask, strength=1.0):
     return out.astype(b.dtype)
 
 
-def composite_window(base_frames, synced_frames, mask, ramp=DEFAULT_RAMP_FRAMES):
+def composite_window(base_frames, synced_frames, mask, ramp=DEFAULT_RAMP_FRAMES,
+                     texture_match=True, texture_strength=1.0, report=None):
     """Composite a whole window, applying the temporal ramp per frame.
 
     base_frames / synced_frames: equal-length sequences of same-shape frames.
     Returns a list of blended frames.
+
+    texture_match: before blending, bring each generated region into line with
+    the real pixels around it on sharpness and grain (vision/texture.py). The
+    sync model renders a fixed-size crop that is scaled back into the frame and
+    denoises as it generates, so without this the mouth is reliably softer and
+    cleaner than the face it sits in -- visible even when the lip motion is
+    perfect. Seeded per frame index so the grain differs frame to frame, as real
+    grain does; a static noise pattern would read as a stuck overlay.
     """
     n = min(len(base_frames), len(synced_frames))
     out = []
+    reports = []
     for i in range(n):
         w = temporal_weight(i, n, ramp)
-        out.append(blend(base_frames[i], synced_frames[i], mask, strength=w))
+        src = synced_frames[i]
+        if texture_match:
+            try:
+                src, rep = _texture.match_texture(
+                    src, base_frames[i], mask, strength=texture_strength,
+                    seed=1000 + i)
+                reports.append(rep)
+            except Exception as e:
+                # Texture matching is an improvement, not a prerequisite: a
+                # failure here must not cost the operator the whole render.
+                reports.append({"error": f"{type(e).__name__}: {e}"})
+        out.append(blend(base_frames[i], src, mask, strength=w))
+    if report is not None and reports:
+        report["texture"] = _summarise_texture(reports)
+    return out
+
+
+def _summarise_texture(reports):
+    """Roll per-frame texture reports into one, for logs and the scorecard."""
+    ok = [r for r in reports if "error" not in r]
+    sharp = [r["sharpness"] for r in ok
+             if r.get("sharpness") and r["sharpness"].get("applied")]
+    grain = [r["grain"] for r in ok
+             if r.get("grain") and r["grain"].get("applied")]
+    out = {"frames": len(reports), "errors": len(reports) - len(ok),
+           "sharpened": len(sharp), "grained": len(grain)}
+    if sharp:
+        out["mean_sharpen_gain"] = round(
+            sum(s["gain"] for s in sharp) / len(sharp), 3)
+        out["capped_frames"] = sum(1 for s in sharp if s.get("capped"))
+    if grain:
+        out["mean_grain_added"] = round(
+            sum(g["added_sigma"] for g in grain) / len(grain), 3)
+    # Why nothing happened is as informative as what did.
+    if not sharp and ok:
+        out["sharpness_skipped"] = (ok[0].get("sharpness") or {}).get(
+            "reason") or (ok[0].get("reason"))
+    if not grain and ok:
+        out["grain_skipped"] = (ok[0].get("grain") or {}).get(
+            "reason") or (ok[0].get("reason"))
     return out
