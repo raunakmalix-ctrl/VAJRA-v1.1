@@ -62,11 +62,20 @@ def _reset_whisper():
     _whisper_device = None
 
 
+# The working rate for the whole edit. 16 kHz throws away everything above
+# 8 kHz before any editing happens -- including the 4-10 kHz sibilance that
+# carries s, sh and t -- so an edit could never sound better than telephone
+# quality no matter how well it was spliced. The synthesisers already produce
+# 24 kHz, and the lip-sync models resample to their own 16 kHz internally, so
+# nothing downstream needs this thrown away.
+MASTER_SR = 24000
+
+
 def _extract_audio(video_path):
     out = timestamp_file("extracted", "wav")
     subprocess.run(
         [FFMPEG_PATH, "-y", "-i", video_path,
-         "-vn", "-ac", "1", "-ar", "16000", out],
+         "-vn", "-ac", "1", "-ar", str(MASTER_SR), out],
         capture_output=True, text=True, check=True,
     )
     return out

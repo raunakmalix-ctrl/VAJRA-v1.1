@@ -96,12 +96,14 @@ class LipSyncEngine(BaseEngine):
         try:
             if method == "latentsync":
                 try:
-                    return self._run_latentsync(video_path, wav_path,
-                                                inference_steps, guidance_scale)
+                    rendered = self._run_latentsync(
+                        video_path, wav_path, inference_steps, guidance_scale)
+                    return self._remux_master(rendered, audio_path)
                 except Exception as e:
                     print(f"[LipSync] LatentSync failed ({e}); "
                           f"falling back to Wav2Lip.")
-            return self._run_wav2lip(video_path, wav_path)
+            return self._remux_master(
+                self._run_wav2lip(video_path, wav_path), audio_path)
         finally:
             for f in tmp:
                 try:
@@ -218,7 +220,9 @@ class LipSyncEngine(BaseEngine):
                 i0, i1 = vision.frame_range(t0, t1, fps, n_frames)
                 frame_windows.append((i0, i1, seg))
 
-            _composite_video(video_path, frame_windows, out_path, wav_path,
+            # audio_path, NOT wav_path: wav_path is the 16 kHz copy made for
+            # the model. Muxing that would throw away the master's full rate.
+            _composite_video(video_path, frame_windows, out_path, audio_path,
                              fps, w, h, mask_mouth=mask_mouth)
             print(f"[LipSync] Output: {out_path}")
             return out_path
@@ -229,6 +233,34 @@ class LipSyncEngine(BaseEngine):
                     os.unlink(f)
                 except Exception:
                     pass
+
+    @staticmethod
+    def _remux_master(video_path, audio_path):
+        """Put the FULL-RATE master audio onto a finished render.
+
+        Both engines are fed a 16 kHz copy, because that is what their mel
+        front-ends want -- and both bake that copy into their output. Left
+        alone, the finished video would carry 16 kHz audio no matter what the
+        rest of the pipeline preserved, so every edit would sound like a phone
+        call. Re-muxing costs one stream copy and no re-encode of the video.
+
+        Best-effort: if it fails, the render is returned unchanged rather than
+        lost.
+        """
+        if not audio_path or not os.path.exists(audio_path):
+            return video_path
+        out = video_path.replace(".mp4", "_hq.mp4")
+        r = subprocess.run(
+            [FFMPEG_PATH, "-y", "-i", video_path, "-i", audio_path,
+             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+             "-map", "0:v:0", "-map", "1:a:0", "-shortest", out],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0 and os.path.exists(out):
+            os.replace(out, video_path)
+        else:
+            print("[LipSync] Master re-mux failed; keeping the engine's audio.")
+        return video_path
 
     # ── LatentSync ──────────────────────────────────────────────────────────
     def _run_latentsync(self, video_path, wav_path, steps, guidance):
@@ -291,7 +323,8 @@ class LipSyncEngine(BaseEngine):
             muxed = out_path.replace(".mp4", "_a.mp4")
             r = subprocess.run(
                 [FFMPEG_PATH, "-y", "-i", out_path, "-i", wav_path,
-                 "-c:v", "copy", "-c:a", "aac", "-shortest", muxed],
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                 "-shortest", muxed],
                 capture_output=True, text=True,
             )
             if r.returncode == 0 and os.path.exists(muxed):

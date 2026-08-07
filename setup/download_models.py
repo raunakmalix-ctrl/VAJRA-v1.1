@@ -109,7 +109,7 @@ def latentsync():
     ckpt_dir = os.path.join(LATENTSYNC_DIR, "checkpoints")
     if os.path.exists(os.path.join(ckpt_dir, "latentsync_unet.pt")):
         print("  exists"); return
-    _hf_snapshot("ByteDance/LatentSync-1.5", LATENTSYNC_WEIGHTS_DIR)
+    _hf_snapshot(LATENTSYNC_HF_REPO, LATENTSYNC_WEIGHTS_DIR)
     _link_tree(LATENTSYNC_WEIGHTS_DIR, ckpt_dir)
 
 

@@ -1,4 +1,4 @@
-# VAJRA 2.0 — AI Media Studio
+# VAJRA 2.5 — AI Media Studio
 
 A single Gradio app (built for Google Colab Pro, runs 100% local/offline once
 models are cached) bundling seven AI media tools:
@@ -32,7 +32,7 @@ models are cached) bundling seven AI media tools:
 | Local speech infill (tier A, English) | ViiTorVoice-NAR |
 | Voice clone (17 languages) | XTTS-v2 |
 | Speech / background separation | Demucs v4 (htdemucs) |
-| Lip re-sync | LatentSync (primary) · Wav2Lip (fallback) |
+| Lip re-sync | LatentSync 1.6 — 512px (primary) · Wav2Lip (fallback) |
 | Text → image | RealVisXL V5.0 (default) / SDXL base |
 | Face swap | InsightFace `inswapper_128` + GFPGAN (default) / CodeFormer |
 | Text → video (prompt only, with audio) | LTX-2.3 |
@@ -46,7 +46,7 @@ only ones whose gating status wasn't confirmed at integration time.
 
 ## Run in Colab
 
-Open **`VAJRA_2.0_Colab.ipynb`**, set the runtime to a GPU (A100 recommended),
+Open **`VAJRA_2.5_Colab.ipynb`**, set the runtime to a GPU (A100 recommended),
 and run the cells top to bottom. The last cell prints a public `*.gradio.live`
 link to the studio.
 

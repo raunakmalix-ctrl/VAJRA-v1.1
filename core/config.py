@@ -63,7 +63,18 @@ XTTS_DIR = os.path.join(MODEL_ROOT, "xtts")
 LATENTSYNC_WEIGHTS_DIR = os.path.join(MODEL_ROOT, "latentsync")
 WAV2LIP_CKPT      = os.path.join(MODEL_ROOT, "wav2lip", "wav2lip_gan.pth")
 LATENTSYNC_CKPT   = os.path.join(LATENTSYNC_DIR, "checkpoints", "latentsync_unet.pt")
-LATENTSYNC_CONFIG = os.path.join(LATENTSYNC_DIR, "configs", "unet", "stage2.yaml")
+# The weights and the UNet config are a matched pair, not two settings: 1.6 was
+# trained at 512x512 and its checkpoint does not fit the 256px stage2 config.
+# Changing one without the other loads a mismatched model, so they live
+# together here and tests/ checks they stay in step.
+#
+# 1.6 over 1.5 for one reason: 1.5 generates a 256px face crop that is upscaled
+# back into the frame, leaving a soft mouth inside a sharp face -- the most
+# reliable visual tell in an edited clip. 1.6 doubles that to 512.
+LATENTSYNC_HF_REPO = os.environ.get("LATENTSYNC_HF_REPO",
+                                    "ByteDance/LatentSync-1.6")
+LATENTSYNC_CONFIG = os.path.join(LATENTSYNC_DIR, "configs", "unet",
+                                 "stage2_512.yaml")
 
 # Transcript
 WHISPERX_MODEL = os.environ.get("WHISPERX_MODEL", "large-v3")

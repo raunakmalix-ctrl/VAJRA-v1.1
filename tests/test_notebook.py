@@ -16,7 +16,7 @@ import os
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NOTEBOOK = os.path.join(_ROOT, "VAJRA_2.0_Colab.ipynb")
+NOTEBOOK = os.path.join(_ROOT, "VAJRA_2.5_Colab.ipynb")
 
 FAILS = []
 
@@ -144,6 +144,42 @@ for var in ("VAJRA_ROOT", "VAJRA_MODELS"):
     check(f"{var} is set by the notebook", var in joined)
     cfg = open(os.path.join(_ROOT, "core", "config.py"), encoding="utf-8").read()
     check(f"{var} is read by core/config.py", var in cfg)
+
+print()
+print("=" * 74)
+print("v2.5 upgrades are wired end to end")
+print("=" * 74)
+cfg = open(os.path.join(_ROOT, "core", "config.py"), encoding="utf-8").read()
+dl = open(os.path.join(_ROOT, "setup", "download_models.py"),
+          encoding="utf-8").read()
+te = open(os.path.join(_ROOT, "engines", "transcript_engine.py"),
+          encoding="utf-8").read()
+ls = open(os.path.join(_ROOT, "engines", "lipsync_engine.py"),
+          encoding="utf-8").read()
+
+# The checkpoint and the UNet config are a matched pair: 1.6 is a 512px model
+# and will not load against the 256px stage2 config. Pinning one without the
+# other loads a mismatched network rather than failing loudly.
+check("lip-sync weights are pinned to 1.6", "LatentSync-1.6" in cfg)
+check("and the 512px UNet config goes with them", "stage2_512.yaml" in cfg)
+check("no 256px config left behind",
+      '"stage2.yaml"' not in cfg)
+check("the downloader uses the pinned repo, not a literal",
+      "LATENTSYNC_HF_REPO" in dl and "LatentSync-1.5" not in dl)
+
+# 24 kHz has to survive all the way to the file, not just the working buffer.
+check("the master rate is 24 kHz", "MASTER_SR = 24000" in te)
+check("extraction uses it rather than a hardcoded rate",
+      'str(MASTER_SR)' in te and '"16000"' not in te)
+check("the finished video is re-muxed with the master audio",
+      "_remux_master" in ls)
+check("windowed compositing muxes the master, not the model's copy",
+      "_composite_video(video_path, frame_windows, out_path, audio_path," in ls)
+check("the models are still fed 16 kHz, which is what they want",
+      "to_wav(audio_path)" in ls)
+
+check("the notebook pins the 2.5 branch", "vajra-2.5" in joined)
+check("and says what 2.5 changes", "What 2.5 changes over 2.0" in joined)
 
 print("=" * 74)
 if FAILS:
