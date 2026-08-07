@@ -169,10 +169,9 @@ check("the downloader uses the pinned repo, not a literal",
 # Using a name is not the same as importing it: the first version of this
 # referenced LATENTSYNC_HF_REPO without adding it to the import list, which
 # passed the check above and would have crashed on the first download.
-check("and actually imports it",
-      "LATENTSYNC_HF_REPO,
-)" in dl or "LATENTSYNC_HF_REPO," in dl.split("
-)")[0])
+_import_block = dl.split("from core.config import (", 1)[-1].split(")", 1)[0]
+check("and actually imports it", "LATENTSYNC_HF_REPO" in _import_block,
+      _import_block.replace("\n", " ").strip()[:80])
 # Successive releases ship the same filename with different architectures, so
 # a plain existence check would keep stale weights and pair them with the new
 # config -- a mismatched model that loads and produces bad output.
