@@ -130,7 +130,7 @@ def viitor():
 # modules, so the operator can request only what they intend to run.
 #
 #   python setup/download_models.py                  # all (default)
-#   python setup/download_models.py voice lipsync    # Edit & Relip
+#   python setup/download_models.py voice lipsync    # Video Edit
 #   python setup/download_models.py faceswap         # Face Swap
 GROUPS = {
     "voice":    [("XTTS-v2 (voice clone)", xtts)],
@@ -145,7 +145,7 @@ GROUPS = {
 # pre-downloaded weights -- they fetch on first use.
 MODULE_GROUPS = {
     "relip":     ["voice", "lipsync"],
-    # Tier A is optional for Edit & Relip but is the whole point of this tab.
+    # Tier A is optional for Video Edit but is the whole point of this tab.
     "voiceedit": ["viitor"],
     "faceswap":  ["faceswap"],
     "txt2img":   [],   # SDXL/RealVisXL fetches on first use

@@ -80,7 +80,7 @@ VENV_LTX2_PY       = _venv_python("venv_ltx2")
 VENV_WAN_PY        = _venv_python("venv_wan")
 VENV_QWEN_PY       = _venv_python("venv_qwen")
 
-# Demucs v4 (htdemucs, MIT) speech/background separation for Edit & Relip.
+# Demucs v4 (htdemucs, MIT) speech/background separation for Video Edit.
 # Editing the speech stem alone and re-laying the UNTOUCHED background over the
 # result is the single strongest realism measure available: the room ambience,
 # music and traffic play continuously across the edit because they were never

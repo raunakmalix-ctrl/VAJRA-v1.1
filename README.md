@@ -3,17 +3,17 @@
 A single Gradio app (built for Google Colab Pro, runs 100% local/offline once
 models are cached) bundling seven AI media tools:
 
-1. **Edit & Relip** — upload a talking-head video, extract its transcript, edit
+1. **Video Edit** — upload a talking-head video, extract its transcript, edit
    the words, and only the changed *words* are re-voiced (in the speaker's own
    cloned voice) and only the affected video windows re-synced. Replaced audio is
    matched to its surroundings — duration, loudness, tone, room and noise floor —
    and the result is scored against the recording's own natural word boundaries,
    so the edit's detectability is measured rather than assumed. Everything
    outside an edit passes through bit-identical.
-2. **Voice Editing & Cloning** — regenerate only the words you changed in a
+2. **Voice Generation** — regenerate only the words you changed in a
    recording, conditioned on the real audio either side, or speak new text in a
    cloned voice. English only.
-3. **Text → Image** — photorealistic image generation from a prompt.
+3. **Image Generation** — photorealistic image generation from a prompt.
 4. **Face Swap** — source face onto a target **image or video**.
 5. **Text → Video** — prompt-only video generation with synchronized audio, or
    supply a reference photo for identity-preserving **motion video** (pick an
@@ -59,15 +59,15 @@ already have.
 
 | Module | Step 6 environments | Step 7 weight groups |
 |---|---|---|
-| Edit & Relip | `VOICE` + `LIPSYNC` (+ `SEPARATE`, recommended) | `voice`, `lipsync` |
-| Voice Editing & Cloning | `VIITOR` | `viitor` |
-| Text → Image | *none* | *none* |
+| Video Edit | `VOICE` + `LIPSYNC` (+ `SEPARATE`, recommended) | `voice`, `lipsync` |
+| Voice Generation | `VIITOR` | `viitor` |
+| Image Generation | *none* | *none* |
 | Face Swap | *none* | `faceswap` |
 | Text → Video | `LTX2` and/or `WAN` | *none* |
 | Image Edit | `QWEN` | *none* |
 | Media Studio | *none* | *none* |
 
-Text → Image, Face Swap and Media Studio run in the principal runtime, so they
+Image Generation, Face Swap and Media Studio run in the principal runtime, so they
 need no isolated environment at all. LTX-2.3 needs its own because its pipeline
 requires a newer `transformers` (for its Gemma 3 text encoder) than any other
 environment here pins.

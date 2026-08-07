@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build ONLY the voice-cloning environment (XTTS-v2).
-# Required by: Edit & Relip.
+# Required by: Video Edit.
 set -e
 source "$(cd "$(dirname "$0")" && pwd)/_venv_common.sh"
 

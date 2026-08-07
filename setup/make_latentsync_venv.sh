@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build ONLY the lip-sync environment (LatentSync + Wav2Lip fallback).
-# Required by: Edit & Relip.
+# Required by: Video Edit.
 set -e
 source "$(cd "$(dirname "$0")" && pwd)/_venv_common.sh"
 

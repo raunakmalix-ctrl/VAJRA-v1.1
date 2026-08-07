@@ -1,7 +1,7 @@
 """
 Speech/background separation (Demucs v4), run in venv_demucs via a worker.
 
-Used by Edit & Relip: the speech stem is what gets edited, and the untouched
+Used by Video Edit: the speech stem is what gets edited, and the untouched
 background is re-laid over the finished result so the room, music and ambience
 play continuously across every join. See workers/demucs_worker.py for why that
 matters more than any single matching stage.

@@ -39,7 +39,7 @@ What each one is actually for:
   never invert the dB ordering, but two seams inside one gap of the distribution
   may legitimately tie.
 - **`test_app_ui.py`** — builds the whole Gradio graph against stubs and renders
-  the Edit & Relip report panels from real `core.router` / `evaluation.scorecard`
+  the Video Edit report panels from real `core.router` / `evaluation.scorecard`
   payloads. A renamed dict key would otherwise pass every other check here and
   fail only on a GPU.
 - **`test_fit_regression.py`** — that a replacement is never cut off

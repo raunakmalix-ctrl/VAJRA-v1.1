@@ -2,7 +2,7 @@
 # Selective environment builder.
 #
 #   bash setup/make_venvs.sh                 # status only — builds nothing
-#   bash setup/make_venvs.sh voice lipsync   # Edit & Relip
+#   bash setup/make_venvs.sh voice lipsync   # Video Edit
 #   bash setup/make_venvs.sh qwen            # Image Edit
 #   bash setup/make_venvs.sh all             # everything (slow)
 #
@@ -11,10 +11,10 @@
 # whole step and prints that target's log tail.
 #
 # Module -> required targets
-#   Edit & Relip    voice lipsync  (+ demucs for separation,
+#   Video Edit    voice lipsync  (+ demucs for separation,
 #                                   + viitor for tier A infill)
 #   Voice Edit      viitor
-#   Text -> Image   (none — runs in the principal runtime)
+#   Image Generation   (none — runs in the principal runtime)
 #   Face Swap       (none)
 #   Media Studio    (none)
 #   Text -> Video   ltx2  and/or  wan
@@ -40,7 +40,7 @@ if [ "$#" -eq 0 ]; then
   venv_status
   echo
   echo "Nothing requested. Pass one or more targets: $ALL_TARGETS"
-  echo "  e.g.  bash setup/make_venvs.sh voice lipsync     # Edit & Relip"
+  echo "  e.g.  bash setup/make_venvs.sh voice lipsync     # Video Edit"
   echo "        bash setup/make_venvs.sh all               # everything (slow)"
   exit 0
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build ONLY the speech/background separation environment (Demucs v4).
-# Optional. Required by: Edit & Relip when separation is enabled.
+# Optional. Required by: Video Edit when separation is enabled.
 set -e
 source "$(cd "$(dirname "$0")" && pwd)/_venv_common.sh"
 

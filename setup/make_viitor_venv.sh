@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the isolated environment for ViiTorVoice-NAR (tier A local infill).
-# Required by: Edit & Relip (tier A), Voice Editing & Cloning.
+# Required by: Video Edit (tier A), Voice Generation.
 #
 # Unlike every other engine here, ViiTorVoice ships as five gRPC services behind
 # an HTTP gateway rather than as a library, so this step clones the repo and

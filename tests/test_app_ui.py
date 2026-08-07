@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Build app.py's UI graph against stubs and exercise the Edit & Relip renderers.
+"""Build app.py's UI graph against stubs and exercise the Video Edit renderers.
 
 There is no GPU or gradio here, so gradio/torch are stubbed. The point is to
 prove the tab wires up and that the report panels render the REAL dict shapes

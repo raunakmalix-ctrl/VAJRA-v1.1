@@ -687,10 +687,10 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
 
     with gr.Tabs() as tabs:
 
-        # ── 01 Edit & Relip ─────────────────────────────────────────────────
-        with gr.Tab("01 · Edit & Relip", id=0):
+        # ── 01 Video Edit ─────────────────────────────────────────────────
+        with gr.Tab("01 · Video Edit", id=0):
             ed_state = gr.State(None)
-            gr.HTML(hero("ti-pencil", "Edit & Relip",
+            gr.HTML(hero("ti-pencil", "Video Edit",
                 "Pull a video's transcript, change words, re-sync the lips."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
@@ -797,9 +797,9 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                             ed_stretch, ed_tier],
                            [ed_out, ed_new_audio, ed_status, ed_report])
 
-        # -- 02 Voice Editing & Cloning --------------------------------------
-        with gr.Tab("02 \u00b7 Voice Editing & Cloning", id=6):
-            gr.HTML(hero("ti-wave-sine", "Voice Editing & Cloning",
+        # -- 02 Voice Generation --------------------------------------
+        with gr.Tab("02 \u00b7 Voice Generation", id=6):
+            gr.HTML(hero("ti-wave-sine", "Voice Generation",
                 "Regenerate only the words you changed, conditioned on the "
                 "real recording \u2014 or speak new text in a cloned voice."))
             with gr.Row():
@@ -889,9 +889,9 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                                 [vc_ref, vc_text, vc_emotion, vc_nvv],
                                 [vc_out, vc_status])
 
-        # ── 03 Text → Image ─────────────────────────────────────────────────
-        with gr.Tab("03 · Text → Image", id=1):
-            gr.HTML(hero("ti-photo", "Text → Image",
+        # ── 03 Image Generation ─────────────────────────────────────────────────
+        with gr.Tab("03 · Image Generation", id=1):
+            gr.HTML(hero("ti-photo", "Image Generation",
                 "Generate photoreal images from a prompt."))
             with gr.Row(equal_height=False):
                 with gr.Column(scale=1):
@@ -1063,7 +1063,7 @@ with gr.Blocks(css=CSS, title="VAJRA", analytics_enabled=False) as demo:
                         ms_tv_st = gr.HTML("")
                         with gr.Row():
                             ms_tv_dl = gr.DownloadButton("⬇ Download", size="sm", visible=False)
-                            ms_tv_send_relip = gr.Button("→ Edit & Relip", size="sm")
+                            ms_tv_send_relip = gr.Button("→ Video Edit", size="sm")
                 ms_tv_btn.click(m_trim_video, [ms_tv_in, ms_tv_s, ms_tv_e],
                                 [ms_tv_out, ms_tv_st, ms_tv_dl])
 
