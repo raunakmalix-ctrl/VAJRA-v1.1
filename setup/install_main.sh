@@ -4,11 +4,19 @@
 set -e
 
 ROOT="${VAJRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# Which pip to install with. Defaults to the ambient one, which is right in a
+# notebook where the runtime IS the environment. On a plain host install.sh
+# points this at venv_main instead, so nothing lands in system python.
+PIP="${PIP:-pip}"
+# apt needs privileges the notebook already has; a normal login usually does not.
+SUDO=""
+if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
 THIRD_PARTY="$ROOT/third_party"
 mkdir -p "$THIRD_PARTY"
 
 echo "==> apt: ffmpeg"
-apt-get -qq update && apt-get -qq install -y ffmpeg git-lfs >/dev/null
+$SUDO apt-get -qq update && $SUDO apt-get -qq install -y ffmpeg git-lfs >/dev/null
 
 echo "==> cloning model repos"
 clone() {  # clone <url> <dir>
@@ -19,7 +27,7 @@ clone https://github.com/bytedance/LatentSync.git       "$THIRD_PARTY/LatentSync
 clone https://github.com/sczhou/CodeFormer.git          "$THIRD_PARTY/CodeFormer"
 
 echo "==> pip: main requirements"
-pip install -q -r "$ROOT/requirements/main.txt"
+"$PIP" install -q -r "$ROOT/requirements/main.txt"
 
 # basicsr (pulled by gfpgan) imports torchvision.transforms.functional_tensor,
 # which newer torchvision removed. Patch the import to functional.
@@ -56,11 +64,11 @@ bash "$ROOT/setup/patch_thirdparty.sh"
 # Colab doesn't have — "libcudart.so.13: cannot open shared object file").
 echo "==> ensuring onnxruntime-gpu==1.19.2 (GPU provider for face swap)"
 pip uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
-pip install -q onnxruntime-gpu==1.19.2
+"$PIP" install -q onnxruntime-gpu==1.19.2
 
 # rembg -> pymatting -> cupy; Colab's cupy 14 is built for numpy 2 and crashes
 # against our numpy<2. Pin a numpy-1.x-compatible cupy.
 echo "==> pinning numpy-compatible cupy (for Media Studio background removal)"
-pip install -q "cupy-cuda12x>=13,<14" || echo "  (cupy pin skipped)"
+"$PIP" install -q "cupy-cuda12x>=13,<14" || echo "  (cupy pin skipped)"
 
 echo "==> main env ready."
