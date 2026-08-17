@@ -124,6 +124,10 @@ def main():
         "  bash install.sh                # core modules",
         "  bash run.sh                    # start it",
         "",
+        "TO USE:      docs/VAJRA_User_Manual.pdf -- every module and every",
+        "             control, how to read the detectability report, and the",
+        "             limits worth knowing before promising a result",
+        "",
         "SHA-256:",
     ]
 
