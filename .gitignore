@@ -3,6 +3,7 @@ outputs/
 uploads/
 models/
 venvs/
+venv_main/
 third_party/
 __pycache__/
 *.pyc
