@@ -152,6 +152,48 @@ for needed in ("python3.12", "python3.10", "ffmpeg", "nvidia-smi"):
     check(f"preflight checks for {needed}", needed in pre)
 check("preflight exits non-zero on a blocking problem", "sys.exit(1)" in pre)
 
+# --- fragility that broke a live Colab run, Aug 2026 -----------------------
+# Three separate failures, one lesson each. All were invisible until a hosted
+# environment drifted underneath the project.
+print("=" * 74)
+print("setup - install fragility regressions")
+print("=" * 74)
+
+req = ""
+for name in ("main.txt",):
+    with open(os.path.join(_ROOT, "requirements", name), encoding="utf-8") as fh:
+        req = fh.read()
+
+# 1. An exact pin on a wheel that can later be delisted takes the WHOLE
+#    requirements file down with it: pip resolves before it installs, so one
+#    unavailable version means nothing at all gets installed -- and the app
+#    then runs against whatever the ambient environment has. That is how a
+#    gradio pin silently stopped applying.
+check("onnxruntime-gpu is not hard-pinned in main requirements",
+      not re.search(r"^onnxruntime-gpu==", req, re.M))
+check("install_main.sh chooses an onnxruntime build at install time",
+      "onnxruntime-gpu==$v" in main_sh or 'onnxruntime-gpu==$v' in main_sh)
+check("install_main.sh falls back rather than aborting when none installs",
+      "onnxruntime" in main_sh and "ORT_OK" in main_sh)
+
+# 2. `python3.12 || python3` reads as a harmless fallback and is not one: when
+#    the host's python3 became 3.13, every py312 environment was built on an
+#    interpreter with no wheels, and the first C build (grpcio) failed with an
+#    error that named nothing relevant.
+check("ensure_py312 prefers a supported interpreter, not the newest one",
+      "python3.12 python3.11 python3.10" in common)
+check("ensure_py312 announces it if it has to fall back",
+      "no python3.10-3.12 available" in common)
+
+# 3. A build that fails part-way still leaves bin/python behind, so the status
+#    line reported a broken environment as built.
+disp_all = read("make_venvs.sh")
+check("a completed build is stamped", ".build-complete" in disp_all)
+check("a failed build has its stamp removed",
+      re.search(r"rm -f .*\.build-complete", disp_all) is not None)
+check("status distinguishes verified from unverified",
+      ".build-complete" in common and "unverified" in common)
+
 print("=" * 74)
 if FAILS:
     print(f"{len(FAILS)} FAILURE(S):")

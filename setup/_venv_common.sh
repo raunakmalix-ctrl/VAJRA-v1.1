@@ -74,8 +74,37 @@ ensure_py310() {
   echo "    using $PY310"
 }
 
+# This used to be `python3.12 || python3`, which reads as a harmless fallback
+# and is not one. When the host's python3 moved to 3.13, every environment
+# below was silently built on an interpreter these stacks publish no wheels
+# for, and the first package needing a C build -- grpcio, in the speech stack
+# -- died with a compiler error that named nothing relevant.
+#
+# So prefer a SUPPORTED interpreter rather than the newest one present:
+# 3.12, then 3.11, then 3.10 (installable everywhere these scripts run), and
+# only then whatever python3 is, with a warning that says what is about to go
+# wrong. Note that apt cannot supply 3.12 on Ubuntu 22.04, which is still what
+# hosted notebooks run -- hence descending to 3.10 rather than trying to force
+# 3.12 into existence.
 ensure_py312() {
-  PY312="$(command -v python3.12 || command -v python3)"
+  PY312=""
+  for cand in python3.12 python3.11 python3.10; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      PY312="$(command -v "$cand")"
+      break
+    fi
+  done
+  if [ -z "$PY312" ]; then
+    # 3.10 is apt-installable on every target these scripts support.
+    _with_bootstrap_lock _install_py310
+    PY312="$(command -v python3.10 || true)"
+  fi
+  if [ -z "$PY312" ]; then
+    PY312="$(command -v python3)"
+    echo "!! no python3.10-3.12 available; falling back to $("$PY312" -V 2>&1)."
+    echo "   These stacks publish no wheels above 3.12, so a source build is"
+    echo "   likely to fail (grpcio is the usual first casualty)."
+  fi
   ensure_virtualenv
   echo "    using $PY312"
 }
@@ -125,8 +154,13 @@ venv_status() {
   echo "==> environment status ($VENVS)"
   for v in venv_voice venv_latentsync venv_demucs venv_viitor \
            venv_wan venv_qwen venv_ltx2; do
-    if [ -x "$VENVS/$v/bin/python" ]; then
+    if [ -x "$VENVS/$v/bin/python" ] && [ -f "$VENVS/$v/.build-complete" ]; then
       echo "    [built]   $v"
+    elif [ -x "$VENVS/$v/bin/python" ]; then
+      # Interpreter present but no marker. That means either a build that
+      # stopped part-way, or one finished before this check existed -- and
+      # the two are indistinguishable from here, so claim neither.
+      echo "    [unverified] $v  — built by an older run, or stopped part-way"
     else
       echo "    [missing] $v"
     fi

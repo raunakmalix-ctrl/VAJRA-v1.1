@@ -23,11 +23,18 @@ protobuf
 
 # Face swap
 insightface==0.7.3
-# Pinned: newer onnxruntime-gpu releases require CUDA 13 (libcudart.so.13),
-# which Colab's runtime doesn't ship — causes "libcudart.so.13: cannot open
-# shared object file" on import (breaks face swap AND SDXL loading via
-# diffusers' onnx_utils probe). 1.19.2 targets CUDA 12, matching Colab.
-onnxruntime-gpu==1.19.2
+# onnxruntime-gpu is NOT pinned here on purpose. It has to match the host's
+# CUDA (newer releases want CUDA 13 and fail with "libcudart.so.13: cannot
+# open shared object file", which breaks face swap AND SDXL loading via
+# diffusers' onnx_utils probe), so the right build can only be chosen at
+# install time -- install_main.sh does that, and falls back to the CPU
+# provider rather than failing.
+#
+# It used to be pinned here to an exact version. When that version was later
+# delisted from PyPI, pip refused the WHOLE file -- so gradio, torch and
+# everything else silently went uninstalled and the app ran against whatever
+# the ambient environment happened to have. One unavailable wheel must not be
+# able to take out the entire install.
 opencv-python-headless
 gfpgan
 basicsr

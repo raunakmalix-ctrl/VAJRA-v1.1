@@ -62,9 +62,30 @@ bash "$ROOT/setup/patch_thirdparty.sh"
 # face swap / InsightFace onto CPU. Re-pin the SAME CUDA-12-compatible GPU
 # version as requirements/main.txt (unpinned "latest" wants CUDA 13, which
 # Colab doesn't have — "libcudart.so.13: cannot open shared object file").
-echo "==> ensuring onnxruntime-gpu==1.19.2 (GPU provider for face swap)"
+#
+# Version choice is made HERE, at install time, and tolerantly: the exact build
+# depends on the host's CUDA, and pinning one version in requirements/main.txt
+# meant that the day that version was delisted from PyPI, pip rejected the
+# whole file and nothing installed at all. Try the CUDA-12 line newest-first,
+# take the first that installs, and if none does, fall back to the CPU provider
+# with a warning. Face swap on CPU is slow but correct; no face swap at all,
+# or a half-installed environment, is neither.
+echo "==> ensuring onnxruntime-gpu (GPU provider for face swap)"
 pip uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
-"$PIP" install -q onnxruntime-gpu==1.19.2
+ORT_OK=""
+for v in 1.22.0 1.21.1 1.20.2 1.20.0; do
+  if "$PIP" install -q "onnxruntime-gpu==$v" 2>/dev/null; then
+    ORT_OK="$v"
+    echo "    onnxruntime-gpu $v"
+    break
+  fi
+done
+if [ -z "$ORT_OK" ]; then
+  echo "!! no CUDA-12 onnxruntime-gpu build installed — falling back to CPU."
+  echo "   Face swap will still work, more slowly. If this host has CUDA 13,"
+  echo "   install a matching onnxruntime-gpu by hand."
+  "$PIP" install -q onnxruntime || true
+fi
 
 # rembg -> pymatting -> cupy; Colab's cupy 14 is built for numpy 2 and crashes
 # against our numpy<2. Pin a numpy-1.x-compatible cupy.

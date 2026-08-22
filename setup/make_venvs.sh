@@ -71,11 +71,25 @@ for t in "${UNIQ[@]}"; do
   PIDS+=("$!"); NAMES+=("$t")
 done
 
+# A builder that fails part-way still leaves venvs/<name>/bin/python behind,
+# so "does the interpreter exist" is not a usable definition of built. Stamp a
+# marker only on a clean exit, and let venv_status read that instead -- an
+# environment reported as built when its packages are half-installed sends the
+# next person hunting a phantom bug in the application.
+declare -A VENVDIR=(
+  [voice]=venv_voice   [lipsync]=venv_latentsync [demucs]=venv_demucs
+  [viitor]=venv_viitor [wan]=venv_wan            [qwen]=venv_qwen
+  [ltx2]=venv_ltx2
+)
+
 fail=0
 for i in "${!PIDS[@]}"; do
   if wait "${PIDS[$i]}"; then
     echo "==> ${NAMES[$i]} OK"
+    d="$VENVS/${VENVDIR[${NAMES[$i]}]}"
+    [ -d "$d" ] && date -u +%Y-%m-%dT%H:%M:%SZ > "$d/.build-complete"
   else
+    rm -f "$VENVS/${VENVDIR[${NAMES[$i]}]}/.build-complete" 2>/dev/null || true
     echo "==> ${NAMES[$i]} FAILED — last 40 lines of $LOGS/${NAMES[$i]}.log:"
     tail -n 40 "$LOGS/${NAMES[$i]}.log"
     fail=1
