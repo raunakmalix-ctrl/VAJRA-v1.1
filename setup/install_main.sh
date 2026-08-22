@@ -9,6 +9,48 @@ ROOT="${VAJRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # notebook where the runtime IS the environment. On a plain host install.sh
 # points this at venv_main instead, so nothing lands in system python.
 PIP="${PIP:-pip}"
+
+# ── the interpreter this stack can actually be installed on ────────────────
+# requirements/main.txt is one mutually consistent set from the 3.10/3.11 era,
+# and its floor is numpy<2 (insightface and the restoration stack require it).
+# NumPy 1.x has no wheels for Python 3.13 at all -- 3.13 support arrived in
+# NumPy 2.1 -- so on a 3.13 interpreter pip must build NumPy from source,
+# fails, and backtracks through the rest of the file for half an hour before
+# giving up. tokenizers<0.20 is unbuildable there for the same reason.
+#
+# This is not fixable by adjusting pins: the whole set predates 3.13. So when
+# the ambient interpreter is too new, build the main environment on Python
+# 3.10 instead and install into that. Callers that already chose an
+# interpreter (install.sh passes its own venv) are left alone.
+if [ "$PIP" = "pip" ]; then
+  _ver="$(python -c 'import sys;print("%d%02d"%sys.version_info[:2])' 2>/dev/null || echo 0)"
+  if [ "$_ver" -ge 313 ] 2>/dev/null; then
+    echo "==> ambient python is $(python -V 2>&1); this stack needs <= 3.12"
+    # shellcheck source=/dev/null
+    source "$ROOT/setup/_venv_common.sh"
+    if ! command -v python3.10 >/dev/null 2>&1; then
+      _with_bootstrap_lock _install_py310
+    fi
+    VENV_MAIN="$ROOT/venv_main"
+    if [ ! -x "$VENV_MAIN/bin/python" ]; then
+      echo "==> building venv_main on python3.10"
+      ensure_virtualenv
+      python -m virtualenv -p "$(command -v python3.10)" "$VENV_MAIN" >/dev/null
+    fi
+    PIP="$VENV_MAIN/bin/pip"
+    PYBIN="$VENV_MAIN/bin/python"
+    "$PIP" install -q --upgrade pip wheel setuptools
+    echo "    installing into $VENV_MAIN ($("$PYBIN" -V 2>&1))"
+    # Colab's preinstalled torch belongs to the ambient 3.13 and is invisible
+    # here, so this environment needs its own. cu121 matches the wheels the
+    # other isolated environments already use.
+    if ! "$PYBIN" -c "import torch" >/dev/null 2>&1; then
+      echo "==> pip: torch (cu121) for venv_main — a few minutes, ~2.5 GB"
+      "$PIP" install -q torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cu121
+    fi
+  fi
+fi
 # The interpreter that goes with $PIP. The basicsr patch below inspects
 # INSTALLED packages, so it has to run in the environment they were installed
 # into -- bare `python` is the ambient one on a host install, where it would

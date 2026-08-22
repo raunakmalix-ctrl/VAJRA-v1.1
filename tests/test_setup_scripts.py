@@ -189,8 +189,11 @@ for pkg in ("gfpgan", "basicsr", "facexlib", "lpips"):
 #     few seconds of failure. One version each means one attempt each.
 for pkg in ("gfpgan==", "basicsr==", "facexlib==", "lpips=="):
     check(f"optional group pins {pkg.rstrip('=')}", pkg in main_sh)
-check("the optional install is not silenced",
-      "2>/dev/null; then" not in main_sh)
+# Intent: the enhancer install must be inspectable afterwards. Checking for
+# "2>/dev/null" anywhere was too crude -- it also matched an unrelated numeric
+# guard -- so check the thing that actually matters.
+check("the optional install keeps a log rather than discarding output",
+      ".enhancer-install.log" in main_sh)
 # 1e. onnxruntime wheels carry no CUDA metadata, so pip's exit code says
 #     nothing about whether the build will run here. Import is the real test.
 check("onnxruntime choice is confirmed by importing it",
@@ -214,6 +217,27 @@ check("install_main.sh patches with the interpreter that owns the packages",
       '"$PYBIN" - <<' in main_sh)
 check("install_main.sh has no bare pip uninstall either",
       not re.search(r"^\s*pip uninstall", main_sh, re.M))
+
+# 1f. The stack's numpy<2 floor has no Python 3.13 wheels, so on a 3.13
+#     runtime pip builds NumPy from source, fails, and backtracks through the
+#     rest of the file for half an hour. No pin can fix that -- the whole set
+#     predates 3.13 -- so install_main.sh must build the main environment on a
+#     supported interpreter instead of trying.
+check("main requirements still floor numpy below 2",
+      re.search(r"^numpy<2", req, re.M) is not None)
+check("install_main.sh detects an unsupported ambient interpreter",
+      "-ge 313" in main_sh)
+check("install_main.sh builds venv_main on 3.10 when it must",
+      "venv_main" in main_sh and "python3.10" in main_sh)
+check("that venv gets its own torch (Colab's belongs to 3.13)",
+      "download.pytorch.org/whl/cu121" in main_sh)
+check("a caller that already chose an interpreter is left alone",
+      'if [ "$PIP" = "pip" ]' in main_sh)
+
+with open(os.path.join(_ROOT, "VAJRA_2.0_Colab.ipynb"), encoding="utf-8") as fh:
+    nb_src = fh.read()
+check("the notebook launches from venv_main when it exists",
+      "venv_main/bin/python" in nb_src)
 
 # 2. `python3.12 || python3` reads as a harmless fallback and is not one: when
 #    the host's python3 became 3.13, every py312 environment was built on an
