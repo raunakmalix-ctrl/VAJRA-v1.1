@@ -36,10 +36,16 @@ insightface==0.7.3
 # the ambient environment happened to have. One unavailable wheel must not be
 # able to take out the entire install.
 opencv-python-headless
-gfpgan
-basicsr
-facexlib
-lpips        # CodeFormer's basicsr imports this
+# gfpgan / basicsr / facexlib / lpips are NOT here, for the same reason as
+# onnxruntime-gpu above: they must not be able to fail the whole file.
+#
+# They are 2021-2022 packages with legacy setup.py builds and no wheels for
+# recent interpreters -- basicsr in particular dies at `setup.py egg_info` on
+# Python 3.13, which hosted notebooks now run. They are needed only by the
+# face ENHANCER, which engines/faceswap_engine.py imports lazily inside
+# load_enhancer(), so their absence costs one option on one tab rather than
+# the platform. install_main.sh installs them separately and warns if it
+# cannot.
 
 # Transcript (Feature 2, step 1) — faster-whisper gives word timestamps without
 # WhisperX's pyannote/torchaudio coupling (which breaks on Colab's torchaudio).

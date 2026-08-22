@@ -9,6 +9,17 @@ ROOT="${VAJRA_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 # notebook where the runtime IS the environment. On a plain host install.sh
 # points this at venv_main instead, so nothing lands in system python.
 PIP="${PIP:-pip}"
+# The interpreter that goes with $PIP. The basicsr patch below inspects
+# INSTALLED packages, so it has to run in the environment they were installed
+# into -- bare `python` is the ambient one on a host install, where it would
+# find nothing and silently skip the patch.
+if [ -z "${PYBIN:-}" ]; then
+  if [ "$PIP" != "pip" ] && [ -x "${PIP%/pip}/python" ]; then
+    PYBIN="${PIP%/pip}/python"
+  else
+    PYBIN="python"
+  fi
+fi
 # apt needs privileges the notebook already has; a normal login usually does not.
 SUDO=""
 if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
@@ -29,10 +40,29 @@ clone https://github.com/sczhou/CodeFormer.git          "$THIRD_PARTY/CodeFormer
 echo "==> pip: main requirements"
 "$PIP" install -q -r "$ROOT/requirements/main.txt"
 
+# Face restoration, installed separately and tolerantly. These are 2021-2022
+# packages with legacy setup.py builds: basicsr fails at `setup.py egg_info`
+# on Python 3.13, which hosted notebooks now run. faceswap_engine imports
+# gfpgan lazily, so the platform starts and every other tab works without
+# them -- what is lost is the face ENHANCER, and the operator is told that
+# here rather than discovering it as an ImportError mid-demo.
+echo "==> pip: face restoration (optional)"
+if "$PIP" install -q gfpgan basicsr facexlib lpips 2>/dev/null; then
+  echo "    face enhancer available"
+  ENHANCER_OK=1
+else
+  ENHANCER_OK=""
+  echo "!! face restoration did not install on this interpreter."
+  echo "   Face Swap still works; its enhancer options do not, so choose"
+  echo "   'None'. Everything else is unaffected."
+  echo "   Cause is almost always the Python version: these packages have no"
+  echo "   wheels above 3.12 and their setup.py cannot build there."
+fi
+
 # basicsr (pulled by gfpgan) imports torchvision.transforms.functional_tensor,
 # which newer torchvision removed. Patch the import to functional.
 echo "==> patching basicsr/gfpgan torchvision import"
-python - <<'PY'
+"$PYBIN" - <<'PY'
 import importlib.util, os, re
 for mod in ("basicsr",):
     spec = importlib.util.find_spec(mod)
@@ -71,7 +101,7 @@ bash "$ROOT/setup/patch_thirdparty.sh"
 # with a warning. Face swap on CPU is slow but correct; no face swap at all,
 # or a half-installed environment, is neither.
 echo "==> ensuring onnxruntime-gpu (GPU provider for face swap)"
-pip uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
+"$PIP" uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
 ORT_OK=""
 for v in 1.22.0 1.21.1 1.20.2 1.20.0; do
   if "$PIP" install -q "onnxruntime-gpu==$v" 2>/dev/null; then
@@ -92,4 +122,8 @@ fi
 echo "==> pinning numpy-compatible cupy (for Media Studio background removal)"
 "$PIP" install -q "cupy-cuda12x>=13,<14" || echo "  (cupy pin skipped)"
 
-echo "==> main env ready."
+if [ -z "${ENHANCER_OK:-}" ]; then
+  echo "==> main env ready — WITHOUT the face enhancer (see the warning above)."
+else
+  echo "==> main env ready."
+fi

@@ -61,7 +61,19 @@ def load_swapper():
 def load_enhancer():
     global _enhancer
     if _enhancer is None:
-        from gfpgan import GFPGANer
+        try:
+            from gfpgan import GFPGANer
+        except ImportError as e:
+            # The restoration stack is installed separately and tolerantly,
+            # because it has no wheels for recent interpreters. Say what to do
+            # instead of surfacing a bare ModuleNotFoundError mid-session.
+            raise RuntimeError(
+                "The face enhancer is not installed on this machine, so this "
+                "option is unavailable. Set 'Face enhancer' to 'None' — the "
+                "swap itself still works, the result is just softer. To "
+                "install it, the host needs Python 3.12 or older: "
+                "pip install gfpgan basicsr facexlib lpips"
+            ) from e
         print("[FaceSwap] Loading GFPGAN enhancer...")
         _enhancer = GFPGANer(
             model_path=GFPGAN_PATH,

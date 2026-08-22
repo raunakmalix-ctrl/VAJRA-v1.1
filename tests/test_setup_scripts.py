@@ -176,6 +176,30 @@ check("install_main.sh chooses an onnxruntime build at install time",
 check("install_main.sh falls back rather than aborting when none installs",
       "onnxruntime" in main_sh and "ORT_OK" in main_sh)
 
+# 1b. Same lesson, second occurrence: the face-restoration packages have
+#     legacy setup.py builds and no wheels above 3.12, so on a 3.13 host they
+#     failed metadata generation and took the whole requirements file with
+#     them. They are imported lazily by one tab, so they belong outside it.
+for pkg in ("gfpgan", "basicsr", "facexlib", "lpips"):
+    check(f"{pkg} is not in the main requirements",
+          not re.search(r"^%s" % pkg, req, re.M))
+check("install_main.sh installs face restoration tolerantly",
+      "ENHANCER_OK" in main_sh)
+check("install_main.sh reports when the enhancer is unavailable",
+      "WITHOUT the face enhancer" in main_sh)
+with open(os.path.join(_ROOT, "engines", "faceswap_engine.py"),
+          encoding="utf-8") as fh:
+    fse = fh.read()
+check("a missing enhancer raises an actionable message, not an ImportError",
+      "Set 'Face enhancer' to 'None'" in fse)
+
+# 1c. Anything that inspects INSTALLED packages must run in the interpreter
+#     they were installed into, not whatever `python` resolves to.
+check("install_main.sh patches with the interpreter that owns the packages",
+      '"$PYBIN" - <<' in main_sh)
+check("install_main.sh has no bare pip uninstall either",
+      not re.search(r"^\s*pip uninstall", main_sh, re.M))
+
 # 2. `python3.12 || python3` reads as a harmless fallback and is not one: when
 #    the host's python3 became 3.13, every py312 environment was built on an
 #    interpreter with no wheels, and the first C build (grpcio) failed with an
