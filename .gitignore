@@ -14,3 +14,4 @@ __pycache__/
 *.png
 !assets/*.png
 HF.txt
+.enhancer-install.log

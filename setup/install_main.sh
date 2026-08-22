@@ -46,8 +46,17 @@ echo "==> pip: main requirements"
 # gfpgan lazily, so the platform starts and every other tab works without
 # them -- what is lost is the face ENHANCER, and the operator is told that
 # here rather than discovering it as an ImportError mid-demo.
+#
+# PINNED, and deliberately so. Unpinned, a failure here is not one failure:
+# pip cannot build basicsr's sdist on 3.13, so it backtracks and tries 1.4.1,
+# then 1.4.0, then 1.3.x, downloading and attempting each in turn. That turned
+# a step that should fail in seconds into eighteen minutes of silence -- and
+# because the output was hidden, the install looked hung rather than busy.
+# One version each means one attempt each. An exact pin is safe HERE, unlike
+# in requirements/main.txt, precisely because failure is handled.
 echo "==> pip: face restoration (optional)"
-if "$PIP" install -q gfpgan basicsr facexlib lpips 2>/dev/null; then
+if "$PIP" install --no-input gfpgan==1.3.8 basicsr==1.4.2 \
+      facexlib==0.3.0 lpips==0.1.4 > "$ROOT/.enhancer-install.log" 2>&1; then
   echo "    face enhancer available"
   ENHANCER_OK=1
 else
@@ -57,6 +66,8 @@ else
   echo "   'None'. Everything else is unaffected."
   echo "   Cause is almost always the Python version: these packages have no"
   echo "   wheels above 3.12 and their setup.py cannot build there."
+  echo "   Full log: $ROOT/.enhancer-install.log"
+  tail -n 3 "$ROOT/.enhancer-install.log" 2>/dev/null | sed 's/^/   | /'
 fi
 
 # basicsr (pulled by gfpgan) imports torchvision.transforms.functional_tensor,
@@ -96,19 +107,25 @@ bash "$ROOT/setup/patch_thirdparty.sh"
 # Version choice is made HERE, at install time, and tolerantly: the exact build
 # depends on the host's CUDA, and pinning one version in requirements/main.txt
 # meant that the day that version was delisted from PyPI, pip rejected the
-# whole file and nothing installed at all. Try the CUDA-12 line newest-first,
-# take the first that installs, and if none does, fall back to the CPU provider
-# with a warning. Face swap on CPU is slow but correct; no face swap at all,
-# or a half-installed environment, is neither.
+# whole file and nothing installed at all.
+#
+# "First that INSTALLS" would be the wrong test: these wheels carry no CUDA
+# metadata, so pip installs a CUDA-13 build onto a CUDA-12 host perfectly
+# happily and the failure only appears later, at import, as
+# "libcudart.so.13: cannot open shared object file" -- exactly what the
+# original pin existed to prevent. So try the CUDA-12 line OLDEST-known-good
+# first, and confirm by importing it rather than by pip's exit code.
 echo "==> ensuring onnxruntime-gpu (GPU provider for face swap)"
 "$PIP" uninstall -y -q onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
 ORT_OK=""
-for v in 1.22.0 1.21.1 1.20.2 1.20.0; do
-  if "$PIP" install -q "onnxruntime-gpu==$v" 2>/dev/null; then
+for v in 1.20.2 1.20.0 1.21.1 1.22.0; do
+  "$PIP" install -q "onnxruntime-gpu==$v" >/dev/null 2>&1 || continue
+  if "$PYBIN" -c "import onnxruntime" >/dev/null 2>&1; then
     ORT_OK="$v"
-    echo "    onnxruntime-gpu $v"
+    echo "    onnxruntime-gpu $v (imports cleanly)"
     break
   fi
+  echo "    onnxruntime-gpu $v installed but will not import here; trying older"
 done
 if [ -z "$ORT_OK" ]; then
   echo "!! no CUDA-12 onnxruntime-gpu build installed — falling back to CPU."

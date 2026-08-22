@@ -183,6 +183,21 @@ check("install_main.sh falls back rather than aborting when none installs",
 for pkg in ("gfpgan", "basicsr", "facexlib", "lpips"):
     check(f"{pkg} is not in the main requirements",
           not re.search(r"^%s" % pkg, req, re.M))
+# 1d. Tolerant is not the same as bounded. Unpinned, the optional group let
+#     pip backtrack through every historical release of basicsr, downloading
+#     and failing to build each -- eighteen minutes of silence instead of a
+#     few seconds of failure. One version each means one attempt each.
+for pkg in ("gfpgan==", "basicsr==", "facexlib==", "lpips=="):
+    check(f"optional group pins {pkg.rstrip('=')}", pkg in main_sh)
+check("the optional install is not silenced",
+      "2>/dev/null; then" not in main_sh)
+# 1e. onnxruntime wheels carry no CUDA metadata, so pip's exit code says
+#     nothing about whether the build will run here. Import is the real test.
+check("onnxruntime choice is confirmed by importing it",
+      'import onnxruntime' in main_sh)
+check("onnxruntime tries the CUDA-12 line before newer builds",
+      re.search(r"for v in 1\.20\.2", main_sh) is not None)
+
 check("install_main.sh installs face restoration tolerantly",
       "ENHANCER_OK" in main_sh)
 check("install_main.sh reports when the enhancer is unavailable",
